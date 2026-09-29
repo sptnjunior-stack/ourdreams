@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#4f46e5">
+  <title>Our Budget</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%234f46e5'/%3E%3Cpath d='M17 14c1-1 2-2.2 2-3.7A3.3 3.3 0 0 0 15.7 7c-1.1 0-1.9.3-2.7 1.2C12.2 7.3 11.4 7 10.3 7A3.3 3.3 0 0 0 7 10.3c0 1.5 1 2.7 2 3.7l4 4Z' fill='white' transform='translate(-1 -0.5)'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <div class="scrim" data-action="close-nav"></div>
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+      <header class="topbar" id="topbar"></header>
+      <section class="page" id="page"></section>
+    </main>
+  </div>
+  <button class="fab" id="fab" data-action="add-tx" title="Add transaction" aria-label="Add transaction"></button>
+  <div id="modal-root"></div>
+  <div class="toasts" id="toasts"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="assets/config.js"></script>
+  <script src="assets/core.js"></script>
+  <script src="assets/sync.js"></script>
+  <script src="assets/importer.js"></script>
+  <script src="assets/views.js"></script>
+  <script src="assets/main.js"></script>
+</body>
+</html>
