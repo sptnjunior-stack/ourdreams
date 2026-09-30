@@ -42,6 +42,7 @@ const App = {
     $('#fab').innerHTML = icon('plus');
     this.onHash(true);
     if (!cfg.me) welcome();
+    if (store._migrated) sync.markDirty();
     sync.start();
   },
   onHash(first = false) {
@@ -111,6 +112,12 @@ const App = {
     const showFilters = ui.page !== 'settings';
     const isDefault = fl.preset === 'thisMonth' && fl.person === 'all' && !fl.cats.length;
     const catsLabel = fl.cats.length ? `${fl.cats.length} categor${fl.cats.length === 1 ? 'y' : 'ies'}` : 'All categories';
+    // month picker: shows a month when the range is exactly one calendar month
+    const oneMonth = f.from.endsWith('-01') && f.to === endOfMonth(f.from.slice(0, 7)) ? f.from.slice(0, 7) : '';
+    const selYear = (oneMonth || f.to).slice(0, 4);
+    const txYears = store.activeTx().map((t) => +String(t.date).slice(0, 4)).filter((y) => y > 1990);
+    const nowY = new Date().getFullYear();
+    const years = []; for (let y = Math.max(nowY + 1, +selYear); y >= Math.min(nowY - 2, +selYear, ...txYears); y--) years.push(y);
     const catGroups = [['Income', store.categories('income')], ...GROUPS.map((g) => [g, store.categories('expense').filter((c) => c.group === g)])];
     $('#topbar').className = `topbar ${this.filtersOpen ? 'filters-open' : ''}`;
     $('#topbar').innerHTML = `
@@ -126,6 +133,12 @@ const App = {
       <div class="filter-summary">${esc(filterLabel(f))}</div>
       <div class="filters">
         <select id="f-preset" aria-label="Date range">${PRESETS.map(([v, l]) => `<option value="${v}" ${fl.preset === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <div class="field-inline month-pick" role="group" aria-label="Month">
+          <button class="btn icon sm" data-action="f-month-step" data-d="-1" aria-label="Previous month">${icon('left')}</button>
+          <select id="f-month" aria-label="Month"><option value="" ${oneMonth ? '' : 'selected'} disabled>Month…</option>${MONTHS_LONG.map((mn, i) => `<option value="${String(i + 1).padStart(2, '0')}" ${oneMonth && +oneMonth.slice(5) === i + 1 ? 'selected' : ''}>${mn}</option>`).join('')}</select>
+          <select id="f-year" aria-label="Year">${years.map((y) => `<option ${String(y) === selYear ? 'selected' : ''}>${y}</option>`).join('')}</select>
+          <button class="btn icon sm" data-action="f-month-step" data-d="1" aria-label="Next month">${icon('right')}</button>
+        </div>
         <div class="field-inline"><input type="date" id="f-from" value="${f.from}" aria-label="From"><span class="muted">–</span><input type="date" id="f-to" value="${f.to}" aria-label="To"></div>
         <div class="seg" role="group" aria-label="Person">
           <button class="${fl.person === 'all' ? 'on' : ''}" data-action="f-person" data-v="all">Everyone</button>
@@ -181,7 +194,13 @@ const App = {
       case 'filter-cat': this.setCatFilter(id); break;
       case 'filter-person': this.setFilter({ person: id }); break;
       case 'f-person': this.setFilter({ person: v }); break;
-      case 'f-reset': this.setFilter({ preset: 'thisMonth', from: null, to: null, person: 'all', cats: [] }); break;
+      case 'f-reset': this.setFilter({ preset: 'thisMonth', from: null, to: null, month: null, person: 'all', cats: [] }); break;
+      case 'f-month-step': {
+        const f = getFilter();
+        const base = ui.filter.preset === 'month' && ui.filter.month ? ui.filter.month : f.to.slice(0, 7);
+        this.setFilter({ preset: 'month', month: addMonths(base, +el.dataset.d) });
+        break;
+      }
       case 'cat-dd': this.ddOpen = !this.ddOpen; this.renderTopbar(); break;
       case 'cat-dd-close': this.ddOpen = false; this.renderTopbar(); break;
       case 'cat-dd-all': this.ddOpen = false; this.setFilter({ cats: [] }); break;
@@ -286,7 +305,14 @@ const App = {
   },
   onChange(e) {
     const el = e.target;
-    if (el.id === 'f-preset') { this.setFilter({ preset: el.value, ...(el.value === 'custom' ? getFilter() : {}) }); return; }
+    if (el.id === 'f-preset') {
+      const extra = el.value === 'custom' ? getFilter() : el.value === 'month' ? { month: getFilter().to.slice(0, 7) } : {};
+      this.setFilter({ preset: el.value, ...extra }); return;
+    }
+    if (el.id === 'f-month' || el.id === 'f-year') {
+      const mSel = $('#f-month').value || getFilter().to.slice(5, 7);
+      this.setFilter({ preset: 'month', month: `${$('#f-year').value}-${mSel}` }); return;
+    }
     if (el.id === 'f-from' || el.id === 'f-to') {
       const f = getFilter();
       const from = el.id === 'f-from' ? el.value || f.from : f.from;

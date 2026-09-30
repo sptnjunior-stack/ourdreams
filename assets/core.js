@@ -37,6 +37,7 @@ function endOfMonth(ym) { return `${ym}-${String(daysInMonth(ym)).padStart(2, '0
 function daysBetween(a, b) { return Math.round((parseDateStr(b) - parseDateStr(a)) / 86400000); }
 function addDays(s, n) { const d = parseDateStr(s); d.setDate(d.getDate() + n); return toDateStr(d); }
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 function fmtMonth(ym, long = false) {
   const [y, m] = ym.split('-').map(Number);
   return long ? new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : `${MONTHS_SHORT[m - 1]} ${String(y).slice(2)}`;
@@ -183,7 +184,6 @@ const DEFAULT_CATEGORIES = [
   ['Other', 'expense', 'Wants', '#94a3b8'],
   ['Salary', 'income', 'Income', '#22c55e'],
   ['Bonus', 'income', 'Income', '#65a30d'],
-  ['Side Income', 'income', 'Income', '#0891b2'],
   ['Other Income', 'income', 'Income', '#94a3b8'],
 ];
 
@@ -256,13 +256,51 @@ function me() { return cfg.me || 'junior'; }
 
 const ui = Object.assign({
   page: 'dashboard',
-  filter: { preset: 'thisMonth', from: null, to: null, person: 'all', cats: [] },
+  filter: { preset: 'thisMonth', from: null, to: null, month: null, person: 'all', cats: [] },
   tx: { q: '', type: 'all', account: 'all', sort: 'date', dir: -1, limit: 100 },
   budgetMonth: null,
 }, lsGet(LS.ui, {}));
-ui.filter = Object.assign({ preset: 'thisMonth', from: null, to: null, person: 'all', cats: [] }, ui.filter);
+ui.filter = Object.assign({ preset: 'thisMonth', from: null, to: null, month: null, person: 'all', cats: [] }, ui.filter);
 ui.tx = Object.assign({ q: '', type: 'all', account: 'all', sort: 'date', dir: -1, limit: 100 }, ui.tx);
 function saveUI() { lsSet(LS.ui, { page: ui.page, filter: ui.filter, tx: { ...ui.tx, q: '' }, budgetMonth: ui.budgetMonth }); }
+
+/* ---------------- data migrations ----------------
+ * v1.1: income categories are Salary, Bonus and Other Income only.
+ * The old default "Side Income" is merged into "Other Income". Idempotent. */
+const RETIRED_CATEGORIES = { 'c_side-income': 'c_other-income' };
+function migrateData(d) {
+  let changed = false;
+  const t = stamp();
+  for (const [oldId, newId] of Object.entries(RETIRED_CATEGORIES)) {
+    const i = d.categories.findIndex((c) => c.id === oldId && !c.deleted);
+    const inUse = d.transactions.some((x) => !x.deleted && x.categoryId === oldId) || d.budgets.some((b) => !b.deleted && b.categoryId === oldId);
+    if (i < 0 && !inUse) continue;
+    if (!d.categories.some((c) => c.id === newId && !c.deleted)) {
+      const def = defaultData().categories.find((c) => c.id === newId);
+      if (!def) continue;
+      const j = d.categories.findIndex((c) => c.id === newId);
+      const rec = { ...def, updatedAt: t };
+      if (j >= 0) d.categories[j] = rec; else d.categories.push(rec);
+    }
+    d.transactions = d.transactions.map((x) => (!x.deleted && x.categoryId === oldId ? { ...x, categoryId: newId, updatedAt: t } : x));
+    // fold budget amounts into the target category
+    const add = {};
+    d.budgets = d.budgets.map((b) => {
+      if (b.deleted || b.categoryId !== oldId) return b;
+      const k = `${b.month}|${b.person}`; add[k] = (add[k] || 0) + (Number(b.amount) || 0);
+      return { id: b.id, deleted: true, updatedAt: t };
+    });
+    for (const [k, v] of Object.entries(add)) {
+      const [month, person] = k.split('|'); const id = `b_${month}_${newId}_${person}`;
+      const j = d.budgets.findIndex((b) => b.id === id && !b.deleted);
+      if (j >= 0) d.budgets[j] = { ...d.budgets[j], amount: (Number(d.budgets[j].amount) || 0) + v, updatedAt: t };
+      else d.budgets.push({ id, month, categoryId: newId, person, amount: v, updatedAt: t });
+    }
+    if (i >= 0) d.categories[i] = { id: oldId, deleted: true, updatedAt: t };
+    changed = true;
+  }
+  return changed;
+}
 
 /* ---------------- store ---------------- */
 const store = {
@@ -270,11 +308,14 @@ const store = {
   version: 0,
   _batch: 0,
   _pending: false,
-  load() { this.data = normalizeData(lsGet(LS.data, null)); this.version++; },
+  load() {
+    this.data = normalizeData(lsGet(LS.data, null)); this.version++;
+    if (migrateData(this.data)) { this.persist(); this._migrated = true; }
+  },
   persist() {
     if (!lsSet(LS.data, this.data)) toast('Could not save to this browser (storage full or blocked).', 'bad');
   },
-  replace(data) { this.data = normalizeData(data); this.version++; this.persist(); },
+  replace(data) { this.data = normalizeData(data); migrateData(this.data); this.version++; this.persist(); },
   all(c) { return this.data[c].filter((r) => !r.deleted); },
   get(c, id) { return id ? this.data[c].find((r) => r.id === id && !r.deleted) : undefined; },
   upsert(c, rec) {
@@ -353,7 +394,7 @@ const catOf = (t) => store.catMap().get(t.categoryId);
 const groupOf = (t) => (catOf(t) || {}).group || (t.type === 'income' ? 'Income' : 'Wants');
 
 const PRESETS = [
-  ['thisMonth', 'This month'], ['lastMonth', 'Last month'], ['last30', 'Last 30 days'], ['last3m', 'Last 3 months'],
+  ['thisMonth', 'This month'], ['lastMonth', 'Last month'], ['month', 'Specific month'], ['last30', 'Last 30 days'], ['last3m', 'Last 3 months'],
   ['last6m', 'Last 6 months'], ['thisYear', 'This year'], ['lastYear', 'Last year'], ['all', 'All time'], ['custom', 'Custom range'],
 ];
 function presetRange(p) {
@@ -378,13 +419,17 @@ function presetRange(p) {
 }
 function getFilter() {
   const f = ui.filter;
-  let r = f.preset === 'custom' && f.from && f.to ? { from: f.from, to: f.to } : presetRange(f.preset);
+  let r;
+  if (f.preset === 'custom' && f.from && f.to) r = { from: f.from, to: f.to };
+  else if (f.preset === 'month' && /^\d{4}-\d{2}$/.test(f.month || '')) r = { from: `${f.month}-01`, to: endOfMonth(f.month) };
+  else r = presetRange(f.preset);
   if (r.from > r.to) r = { from: r.to, to: r.from };
   return { ...r, person: f.person || 'all', cats: f.cats && f.cats.length ? new Set(f.cats) : null };
 }
 function filterLabel(f = getFilter()) {
   const preset = PRESETS.find((p) => p[0] === ui.filter.preset);
-  const range = ui.filter.preset === 'custom' || !preset ? `${fmtDate(f.from)} – ${fmtDate(f.to)}` : preset[1];
+  const range = ui.filter.preset === 'month' && ui.filter.month ? fmtMonth(ui.filter.month, true)
+    : ui.filter.preset === 'custom' || !preset ? `${fmtDate(f.from)} – ${fmtDate(f.to)}` : preset[1];
   const who = f.person === 'all' ? 'Everyone' : pname(f.person);
   const cats = f.cats ? `${f.cats.size} categor${f.cats.size === 1 ? 'y' : 'ies'}` : 'All categories';
   return `${range} · ${who} · ${cats}`;

@@ -100,7 +100,7 @@ const DESC_KEYWORDS = [
   [/(tabungan|saving|investasi|investment|reksadana|reksa dana|bibit|ajaib|saham|stock|deposito|\bemas\b|\bgold\b|crypto)/i, 'Savings & Investment'],
   [/(gaji|salary|payroll|upah)/i, 'Salary'],
   [/(bonus|\bthr\b)/i, 'Bonus'],
-  [/(freelance|side|sampingan|project|proyek|dividen|dividend)/i, 'Side Income'],
+  [/(freelance|side|sampingan|project|proyek|dividen|dividend|cashback|refund|interest|bunga)/i, 'Other Income'],
 ];
 function guessCategoryName(text) {
   const s = String(text || '');
@@ -261,10 +261,13 @@ const Importer = {
     }
     keep('category', uniq('category'), (v) => {
       const t = typeFor[v] && typeFor[v].income > typeFor[v].expense ? 'income' : 'expense';
-      const direct = findCategoryByName(v, t) || findCategoryByName(v);
+      const any = (name) => (t === 'income' ? findCategoryByName(name, 'income') : findCategoryByName(name, t) || findCategoryByName(name));
+      const direct = any(v);
       if (direct) return direct.id;
-      const g = guessCategoryName(v); const c = g && (findCategoryByName(g, t) || findCategoryByName(g));
-      return c ? c.id : '__new__';
+      const g = guessCategoryName(v); const c = g && any(g);
+      if (c) return c.id;
+      if (t === 'income' && store.get('categories', 'c_other-income')) return 'c_other-income';
+      return '__new__';
     });
     s.catTypes = typeFor;
   },
