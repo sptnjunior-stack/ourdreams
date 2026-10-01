@@ -3,7 +3,7 @@
  * core.js — utilities, icons, data model, store and calculations
  * ===================================================================== */
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.2.0';
 const LS = { data: 'cbt.data.v1', cfg: 'cbt.config.v1', ui: 'cbt.ui.v1', sync: 'cbt.sync.v1' };
 
 /* ---------------- utils ---------------- */
@@ -157,7 +157,13 @@ function fmtInput(n, cur = 'IDR') {
 }
 
 /* ---------------- defaults ---------------- */
-const PERSON_IDS = ['junior', 'sabit', 'shared'];
+const PERSON_IDS = ['junior', 'sabit', 'shared']; // owners of accounts & goals ("shared" = joint)
+const PEOPLE = ['junior', 'sabit'];                // whose spending/income it is
+const SPLIT = 'split';                              // a transaction split between both of you
+const FEE_CAT = 'c_bank-admin-fees';
+/* Categories that are monthly bills rather than day-to-day spending (no daily allowance).
+ * Each category can override this with its own `fixed` flag (Categories page). */
+const DEFAULT_FIXED = new Set(['c_housing-rent', 'c_utilities-bills', 'c_phone-internet', 'c_insurance', 'c_debt-installments', 'c_subscriptions', 'c_family', 'c_savings-investment']);
 const GROUPS = ['Needs', 'Wants', 'Savings'];
 const GROUP_COLORS = { Needs: '#0ea5e9', Wants: '#f97316', Savings: '#10b981', Income: '#22c55e' };
 const ACCOUNT_TYPES = { bank: 'Bank', ewallet: 'E-wallet', cash: 'Cash', credit: 'Credit card', savings: 'Savings', investment: 'Investment', other: 'Other' };
@@ -180,6 +186,7 @@ const DEFAULT_CATEGORIES = [
   ['Subscriptions', 'expense', 'Wants', '#8b5cf6'],
   ['Travel', 'expense', 'Wants', '#eab308'],
   ['Gifts & Donations', 'expense', 'Wants', '#d946ef'],
+  ['Bank & Admin Fees', 'expense', 'Needs', '#a8a29e'],
   ['Savings & Investment', 'expense', 'Savings', '#10b981'],
   ['Other', 'expense', 'Wants', '#94a3b8'],
   ['Salary', 'income', 'Income', '#22c55e'],
@@ -261,6 +268,7 @@ const ui = Object.assign({
   budgetMonth: null,
 }, lsGet(LS.ui, {}));
 ui.filter = Object.assign({ preset: 'thisMonth', from: null, to: null, month: null, person: 'all', cats: [] }, ui.filter);
+if (ui.filter.person === 'shared') ui.filter.person = SPLIT; // v1.2: Shared → Split
 ui.tx = Object.assign({ q: '', type: 'all', account: 'all', sort: 'date', dir: -1, limit: 100 }, ui.tx);
 function saveUI() { lsSet(LS.ui, { page: ui.page, filter: ui.filter, tx: { ...ui.tx, q: '' }, budgetMonth: ui.budgetMonth }); }
 
@@ -298,6 +306,34 @@ function migrateData(d) {
     }
     if (i >= 0) d.categories[i] = { id: oldId, deleted: true, updatedAt: t };
     changed = true;
+  }
+  // v1.2: "Shared" spending becomes a 50:50 split between Junior and Sabit
+  d.transactions = d.transactions.map((x) => {
+    if (x.deleted || x.person !== 'shared') return x;
+    changed = true;
+    return { ...x, person: SPLIT, splitJunior: 0.5, updatedAt: t };
+  });
+  const fold = {};
+  d.budgets = d.budgets.map((b) => {
+    if (b.deleted || b.person !== 'shared') return b;
+    changed = true;
+    const k = `${b.month}|${b.categoryId}`; fold[k] = (fold[k] || 0) + (Number(b.amount) || 0);
+    return { id: b.id, deleted: true, updatedAt: t };
+  });
+  for (const [k, v] of Object.entries(fold)) {
+    const [month, categoryId] = k.split('|');
+    const half = { junior: Math.ceil(v / 2), sabit: Math.floor(v / 2) };
+    for (const p of PEOPLE) {
+      const id = `b_${month}_${categoryId}_${p}`;
+      const j = d.budgets.findIndex((b) => b.id === id && !b.deleted);
+      if (j >= 0) d.budgets[j] = { ...d.budgets[j], amount: (Number(d.budgets[j].amount) || 0) + half[p], updatedAt: t };
+      else d.budgets.push({ id, month, categoryId, person: p, amount: half[p], updatedAt: t });
+    }
+  }
+  // v1.2: category for admin/bank fees (kept if you deleted it on purpose)
+  if (!d.categories.some((c) => c.id === FEE_CAT)) {
+    const def = defaultData().categories.find((c) => c.id === FEE_CAT);
+    if (def) { d.categories.push({ ...def }); changed = true; }
   }
   return changed;
 }
@@ -371,6 +407,11 @@ const persons = () => store.data.settings.persons;
 const pname = (id) => (persons()[id] || {}).name || id || '–';
 const pcolor = (id) => (persons()[id] || {}).color || '#94a3b8';
 function personChip(id) { return `<span class="chip" style="background:${pcolor(id)}22;color:${pcolor(id)}">${esc(pname(id))}</span>`; }
+function splitLabel(t) { const r = Math.round(shareOf(t, 'junior') * 100); return `${r}:${100 - r}`; }
+function txPersonChip(t) {
+  if (!isSplit(t)) return personChip(t.person);
+  return `<span class="chip" title="${esc(pname('junior'))} ${Math.round(shareOf(t, 'junior') * 100)}% · ${esc(pname('sabit'))} ${Math.round(shareOf(t, 'sabit') * 100)}%"><span class="dot" style="background:${pcolor('junior')}"></span><span class="dot" style="background:${pcolor('sabit')};margin-left:-4px"></span>Split ${splitLabel(t)}</span>`;
+}
 function catChip(catId) {
   const c = store.catMap().get(catId);
   if (!c) return '<span class="chip">Uncategorized</span>';
@@ -390,6 +431,59 @@ function convert(amount, from, to, rate) {
   const idr = from === 'IDR' ? amount : amount * (Number(rate) || rateOf(from));
   return to === 'IDR' ? idr : idr / rateOf(to);
 }
+/* ---- split, fee & report lines ----
+ * A transaction can belong to Junior, Sabit, or be split (t.person === 'split', t.splitJunior = Junior's share 0..1).
+ * t.fee is an optional admin fee in the transaction's currency:
+ *   fee > 0  → charged on top of the amount        (Rp 100.000 + 2.500 fee → 102.500 leaves the account)
+ *   fee < 0  → taken out of the amount you entered (Rp 100.000 incl. 2.500 fee → 97.500 is the real purchase)
+ * For income, the fee is always deducted from what arrives. Fees are reported in "Bank & Admin Fees". */
+function shareOf(t, p) {
+  if (t.person === SPLIT || t.person === 'shared') {
+    const r = t.person === 'shared' ? 0.5 : clamp(Number(t.splitJunior ?? 0.5), 0, 1);
+    return p === 'junior' ? r : p === 'sabit' ? 1 - r : 0;
+  }
+  return t.person === p ? 1 : 0;
+}
+const isSplit = (t) => t.person === SPLIT || t.person === 'shared';
+const feeAbs = (t) => Math.abs(Number(t.fee) || 0);
+const toIDR = (t, v) => (!t.currency || t.currency === 'IDR' ? v : Math.round(v * (Number(t.rate) || rateOf(t.currency))));
+/** The amount that is the actual purchase / income / transfer, without the fee (in the tx currency). */
+function principalAmt(t) {
+  const a = Number(t.amount) || 0;
+  if (t.type === 'income') return a;
+  return (Number(t.fee) || 0) < 0 ? a - feeAbs(t) : a;
+}
+/** Money leaving `accountId` (tx currency): purchase + fee. */
+function outflowAmt(t) { return principalAmt(t) + feeAbs(t); }
+const principalIDR = (t) => toIDR(t, principalAmt(t));
+const feeIDR = (t) => toIDR(t, feeAbs(t));
+function linesOf(t) {
+  if (t.deleted) return [];
+  const out = [];
+  const reportable = t.type === 'expense' || t.type === 'income';
+  const fee = feeAbs(t) ? feeIDR(t) : 0;
+  if (!reportable && !fee) return out;
+  const who = isSplit(t) ? PEOPLE : [t.person];
+  const p0 = reportable ? principalIDR(t) : 0;
+  const feeCat = store.catMap().has(FEE_CAT) ? FEE_CAT : 'c_other';
+  for (const p of who) {
+    const s = shareOf(t, p); if (!s) continue;
+    if (reportable && p0) out.push({ t, date: t.date, type: t.type, categoryId: t.categoryId, person: p, v: p0 * s });
+    if (fee) out.push({ t, date: t.date, type: 'expense', categoryId: feeCat, person: p, v: fee * s, fee: true });
+  }
+  return out;
+}
+function allLines() { return store.memo('lines', () => store.activeTx().flatMap(linesOf)); }
+function lineMatches(l, f) {
+  if (l.date < f.from || l.date > f.to) return false;
+  if (f.person === SPLIT) { if (!isSplit(l.t)) return false; }
+  else if (f.person !== 'all' && l.person !== f.person) return false;
+  if (f.cats && !f.cats.has(l.categoryId)) return false;
+  return true;
+}
+function filteredLines(f = getFilter()) { return allLines().filter((l) => lineMatches(l, f)); }
+const isFixed = (c) => !!c && c.type === 'expense' && (c.fixed !== undefined ? !!c.fixed : DEFAULT_FIXED.has(c.id));
+
 const catOf = (t) => store.catMap().get(t.categoryId);
 const groupOf = (t) => (catOf(t) || {}).group || (t.type === 'income' ? 'Income' : 'Wants');
 
@@ -430,38 +524,64 @@ function filterLabel(f = getFilter()) {
   const preset = PRESETS.find((p) => p[0] === ui.filter.preset);
   const range = ui.filter.preset === 'month' && ui.filter.month ? fmtMonth(ui.filter.month, true)
     : ui.filter.preset === 'custom' || !preset ? `${fmtDate(f.from)} – ${fmtDate(f.to)}` : preset[1];
-  const who = f.person === 'all' ? 'Everyone' : pname(f.person);
+  const who = f.person === 'all' ? 'Everyone' : f.person === SPLIT ? 'Split items' : pname(f.person);
   const cats = f.cats ? `${f.cats.size} categor${f.cats.size === 1 ? 'y' : 'ies'}` : 'All categories';
   return `${range} · ${who} · ${cats}`;
 }
 function txMatches(t, f, { ignoreDate = false, ignorePerson = false, ignoreCats = false } = {}) {
   if (t.deleted) return false;
   if (!ignoreDate && (t.date < f.from || t.date > f.to)) return false;
-  if (!ignorePerson && f.person !== 'all' && t.person !== f.person) return false;
+  if (!ignorePerson && f.person !== 'all') {
+    if (f.person === SPLIT) { if (!isSplit(t)) return false; }
+    else if (!shareOf(t, f.person) && !(t.type !== 'expense' && t.type !== 'income' && !isSplit(t) && t.person === f.person)) return false;
+  }
   if (!ignoreCats && f.cats) {
-    if (t.type !== 'expense' && t.type !== 'income') return false;
-    if (!f.cats.has(t.categoryId)) return false;
+    const feeHit = feeAbs(t) && f.cats.has(store.catMap().has(FEE_CAT) ? FEE_CAT : 'c_other');
+    if (!feeHit) {
+      if (t.type !== 'expense' && t.type !== 'income') return false;
+      if (!f.cats.has(t.categoryId)) return false;
+    }
   }
   return true;
 }
 function filteredTx(f = getFilter(), opts) { return store.activeTx().filter((t) => txMatches(t, f, opts)); }
 
-function summarize(txs) {
-  const r = { income: 0, spend: 0, saved: 0, outflow: 0, count: txs.length, byCat: {}, byPerson: { junior: 0, sabit: 0, shared: 0 }, byGroup: { Needs: 0, Wants: 0, Savings: 0 } };
-  for (const t of txs) {
-    const v = txBase(t);
-    if (t.type === 'income') r.income += v;
-    else if (t.type === 'expense') {
-      const g = groupOf(t);
+/** Totals from report lines (see linesOf). Split transactions count by each person's share; fees count as spending. */
+function summarize(lines) {
+  const r = { income: 0, spend: 0, saved: 0, outflow: 0, fees: 0, split: 0, count: new Set(lines.map((l) => l.t.id)).size, byCat: {}, byPerson: { junior: 0, sabit: 0 }, incomeByPerson: { junior: 0, sabit: 0 }, byGroup: { Needs: 0, Wants: 0, Savings: 0 } };
+  for (const l of lines) {
+    const v = l.v;
+    if (l.type === 'income') { r.income += v; r.incomeByPerson[l.person] = (r.incomeByPerson[l.person] || 0) + v; }
+    else if (l.type === 'expense') {
+      const c = store.catMap().get(l.categoryId);
+      const g = (c || {}).group || 'Wants';
       r.outflow += v;
       if (g === 'Savings') r.saved += v; else r.spend += v;
-      r.byCat[t.categoryId] = (r.byCat[t.categoryId] || 0) + v;
-      r.byPerson[t.person] = (r.byPerson[t.person] || 0) + v;
+      if (l.fee) r.fees += v;
+      if (isSplit(l.t)) r.split += v;
+      r.byCat[l.categoryId] = (r.byCat[l.categoryId] || 0) + v;
+      r.byPerson[l.person] = (r.byPerson[l.person] || 0) + v;
       r.byGroup[g] = (r.byGroup[g] || 0) + v;
     }
   }
   r.net = r.income - r.outflow;
   return r;
+}
+
+/** Daily allowance for flexible (non-fixed) spending on `date`, from that month's budget. */
+function dailyAllowance(date, person = 'all', cats = null) {
+  const ym = date.slice(0, 7);
+  return store.memo(`allow:${ym}:${person}:${cats ? [...cats].sort().join(',') : ''}`, () => {
+    let total = 0;
+    for (const b of budgetsFor(ym).list) {
+      const c = store.catMap().get(b.categoryId);
+      if (!c || c.type !== 'expense' || isFixed(c)) continue;
+      if (person !== 'all' && person !== SPLIT && b.person !== person) continue;
+      if (cats && !cats.has(b.categoryId)) continue;
+      total += Number(b.amount) || 0;
+    }
+    return total / daysInMonth(ym);
+  });
 }
 
 /* Budgets: stored per month × category × person. A month without its own
@@ -490,7 +610,7 @@ function budgetForRange(f, type = 'expense') {
     for (const bud of budgetsFor(ym).list) {
       const c = store.catMap().get(bud.categoryId);
       if (!c || c.type !== type) continue;
-      if (f.person !== 'all' && bud.person !== f.person) continue;
+      if (f.person !== 'all' && f.person !== SPLIT && bud.person !== f.person) continue;
       if (f.cats && !f.cats.has(bud.categoryId)) continue;
       const v = (Number(bud.amount) || 0) * frac;
       res.total += v;
@@ -506,13 +626,15 @@ function accountBalance(acc, asOf = todayStr()) {
   const start = acc.openingDate || '0000-00-00';
   for (const t of store.activeTx()) {
     if (t.date < start || t.date > asOf) continue;
+    const cur = t.currency || 'IDR';
     if (t.accountId === acc.id) {
-      const v = convert(t.amount, t.currency || 'IDR', acc.currency, t.rate);
-      if (t.type === 'income' || t.type === 'adjustment') bal += v;
-      else if (t.type === 'expense' || t.type === 'transfer') bal -= v;
+      if (t.type === 'adjustment') bal += convert(t.amount, cur, acc.currency, t.rate);
+      else if (t.type === 'income') bal += convert((Number(t.amount) || 0) - feeAbs(t), cur, acc.currency, t.rate);
+      else if (t.type === 'expense' || t.type === 'transfer') bal -= convert(outflowAmt(t), cur, acc.currency, t.rate);
     }
-    if (t.type === 'transfer' && t.toAccountId === acc.id) {
-      bal += t.toAmount !== undefined && t.toAmount !== null && t.toAmount !== '' ? Number(t.toAmount) : convert(t.amount, t.currency || 'IDR', acc.currency, t.rate);
+    // transfers, and savings spending moved into another account (e.g. Bibit, a savings account)
+    if ((t.type === 'transfer' || t.type === 'expense') && t.toAccountId && t.toAccountId === acc.id && t.toAccountId !== t.accountId) {
+      bal += t.toAmount !== undefined && t.toAmount !== null && t.toAmount !== '' ? Number(t.toAmount) : convert(principalAmt(t), cur, acc.currency, t.rate);
     }
   }
   return bal;
@@ -526,7 +648,7 @@ function goalSaved(g, asOf = todayStr()) {
     if (a) return accountBalanceIDR(a, asOf);
   }
   const contrib = sum(store.all('contributions').filter((c) => c.goalId === g.id && c.date <= asOf), (c) => c.amount);
-  const fromTx = sum(store.activeTx().filter((t) => t.goalId === g.id && t.date <= asOf && t.type === 'expense'), txBase);
+  const fromTx = sum(store.activeTx().filter((t) => t.goalId === g.id && t.date <= asOf && t.type === 'expense'), principalIDR);
   return contrib + fromTx;
 }
 function goalSavedBetween(g, from, to) {
@@ -535,7 +657,7 @@ function goalSavedBetween(g, from, to) {
     if (a) return accountBalanceIDR(a, to) - accountBalanceIDR(a, addDays(from, -1));
   }
   const contrib = sum(store.all('contributions').filter((c) => c.goalId === g.id && c.date >= from && c.date <= to), (c) => c.amount);
-  const fromTx = sum(store.activeTx().filter((t) => t.goalId === g.id && t.type === 'expense' && t.date >= from && t.date <= to), txBase);
+  const fromTx = sum(store.activeTx().filter((t) => t.goalId === g.id && t.type === 'expense' && t.date >= from && t.date <= to), principalIDR);
   return contrib + fromTx;
 }
 

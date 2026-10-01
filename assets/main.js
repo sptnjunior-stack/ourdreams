@@ -33,10 +33,23 @@ const App = {
     window.addEventListener('hashchange', () => this.onHash());
     document.addEventListener('click', (e) => this.onClick(e));
     document.addEventListener('change', (e) => this.onChange(e));
+    // leaving an amount field turns 750rb / 1,5jt into 750.000 / 1.500.000
+    document.addEventListener('focusout', (e) => {
+      const el = e.target;
+      if (!el.matches || !el.matches('input[data-money], input[data-bud]')) return;
+      const raw = el.value.trim(); if (!raw) return;
+      const curSel = el.form && el.form.elements.currency;
+      const cur = el.dataset.money || (curSel && curSel.value) || 'IDR';
+      const v = parseAmount(raw);
+      if (!isFinite(v)) return;
+      if (!(CURRENCIES[cur] || { decimals: 2 }).decimals && !Number.isInteger(v)) return; // e.g. "1.5" in Rupiah: leave it for you to fix
+      const out = fmtInput(v, cur);
+      if (out !== el.value) { el.value = out; el.dispatchEvent(new Event('input', { bubbles: true })); }
+    });
     // live "= Rp 1.500.000" hint under amount fields, so 750rb / 1,5jt are easy to check
     document.addEventListener('input', (e) => {
       const el = e.target;
-      if (!el.matches || !el.matches('input[data-money]')) return;
+      if (!el.matches || !el.matches('input[data-money]') || el.hasAttribute('data-nohint')) return;
       let h = el.nextElementSibling;
       if (!h || !h.classList.contains('money-hint')) { h = document.createElement('span'); h.className = 'hint money-hint'; el.insertAdjacentElement('afterend', h); }
       const curSel = el.form && el.form.elements.currency;
@@ -154,7 +167,8 @@ const App = {
         <div class="field-inline"><input type="date" id="f-from" value="${f.from}" aria-label="From"><span class="muted">–</span><input type="date" id="f-to" value="${f.to}" aria-label="To"></div>
         <div class="seg" role="group" aria-label="Person">
           <button class="${fl.person === 'all' ? 'on' : ''}" data-action="f-person" data-v="all">Everyone</button>
-          ${PERSON_IDS.map((p) => `<button class="${fl.person === p ? 'on' : ''}" data-action="f-person" data-v="${p}"><span class="dot" style="background:${pcolor(p)}"></span>${esc(pname(p))}</button>`).join('')}
+          ${PEOPLE.map((p) => `<button class="${fl.person === p ? 'on' : ''}" data-action="f-person" data-v="${p}"><span class="dot" style="background:${pcolor(p)}"></span>${esc(pname(p))}</button>`).join('')}
+          <button class="${fl.person === SPLIT ? 'on' : ''}" data-action="f-person" data-v="${SPLIT}" title="Only transactions you split between you"><span class="dot" style="background:${pcolor('junior')}"></span><span class="dot" style="background:${pcolor('sabit')};margin-left:-6px"></span>Split</button>
         </div>
         <div class="dd" id="cat-dd">
           <button class="btn ${fl.cats.length ? 'primary' : ''}" data-action="cat-dd">${icon('tag')} ${catsLabel} ${icon('down')}</button>
@@ -254,11 +268,11 @@ const App = {
       }
       case 'bud-from-actual': {
         const ym = ui.budgetMonth; const prev = addMonths(ym, -1);
-        const txs = store.activeTx().filter((t) => t.date.startsWith(prev) && (t.type === 'expense' || t.type === 'income'));
-        if (!txs.length) { toast(`No transactions in ${fmtMonth(prev, true)}.`, 'bad'); return; }
+        const lns = allLines().filter((l) => l.date.startsWith(prev));
+        if (!lns.length) { toast(`No transactions in ${fmtMonth(prev, true)}.`, 'bad'); return; }
         if (!(await confirmBox('Use last month\'s actuals?', `<p>This sets ${fmtMonth(ym, true)}'s plan to what each person actually earned and spent per category in ${fmtMonth(prev, true)} (rounded to Rp 50.000). You can adjust afterwards.</p>`, { okLabel: 'Fill plan', danger: false }))) return;
         const agg = {};
-        for (const t of txs) { const k = `${t.categoryId}|${t.person}`; agg[k] = (agg[k] || 0) + txBase(t); }
+        for (const l of lns) { const k = `${l.categoryId}|${l.person}`; agg[k] = (agg[k] || 0) + l.v; }
         store.batch(() => {
           store.all('budgets').filter((b) => b.month === ym).forEach((b) => store.remove('budgets', b.id));
           for (const [k, val] of Object.entries(agg)) {
@@ -276,6 +290,13 @@ const App = {
         break;
       }
       case 'add-cat': openCategoryForm(); break;
+      case 'toggle-fixed': {
+        const c = store.get('categories', id); if (!c) return;
+        const nowFixed = !isFixed(c);
+        store.upsert('categories', { ...c, fixed: nowFixed });
+        toast(`${c.name} is now ${nowFixed ? 'fixed (checked monthly)' : 'flexible (gets a daily allowance)'}.`);
+        break;
+      }
       case 'edit-cat': openCategoryForm(store.get('categories', id)); break;
       case 'del-cat': deleteCategory(store.get('categories', id)); break;
       case 'add-goal': openGoalForm(); break;
@@ -359,39 +380,61 @@ function welcome() {
 
 /* ---------------- transaction form ---------------- */
 function lastAccountFor(person) {
+  if (person === SPLIT || person === 'shared') person = me();
   const t = store.activeTx().filter((x) => x.person === person && x.accountId && x.type === 'expense').sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0];
   if (t && store.get('accounts', t.accountId)) return t.accountId;
   const own = store.all('accounts').find((a) => a.owner === person && !a.archived);
   return own ? own.id : '';
 }
+const FEE_CHIPS = [1000, 2500, 6500];
+const SPLIT_CHIPS = [[0.5, '50 : 50'], [0.6, '60 : 40'], [0.4, '40 : 60'], [0.7, '70 : 30'], [0.3, '30 : 70']];
 function openTxForm(existing, preset = {}) {
   const isNew = !existing;
   const t = existing ? { ...existing } : {
     id: uid('t_'), type: 'expense', date: todayStr(), amount: '', currency: 'IDR', rate: 1, description: '', categoryId: '',
-    person: me(), accountId: lastAccountFor(me()), toAccountId: '', notes: '', goalId: '', ...preset,
+    person: me(), splitJunior: 0.5, accountId: lastAccountFor(me()), toAccountId: '', notes: '', goalId: '', fee: 0, ...preset,
   };
+  if (t.person === 'shared') { t.person = SPLIT; t.splitJunior = 0.5; }
   if (isNew && ui.filter.person !== 'all' && !preset.person) { t.person = ui.filter.person; t.accountId = lastAccountFor(t.person); }
   let catTouched = !!existing && !!t.categoryId;
   const descs = [...new Set(store.activeTx().sort((a, b) => b.date.localeCompare(a.date)).map((x) => (x.description || '').trim()).filter(Boolean))].slice(0, 300);
   const accOpts = (sel) => `<option value="">— none —</option>${store.all('accounts').filter((a) => !a.archived || a.id === sel).map((a) => `<option value="${a.id}" ${sel === a.id ? 'selected' : ''}>${esc(a.name)} (${a.currency})</option>`).join('')}`;
   const goals = store.all('goals');
+  const hasFee = !!(Number(t.fee) || 0);
   const title = isNew ? (t.type === 'transfer' ? 'New transfer' : 'New transaction') : (t.type === 'adjustment' ? 'Balance adjustment' : 'Edit transaction');
   const m = Modal.open(`${Modal.head(title, isNew ? `Tip: press <b>N</b> anywhere to add one quickly` : `Last edited by ${esc(pname(t.updatedBy || t.createdBy))} · ${relTime(t.updatedAt)}`)}
     <form class="modal-body" id="tx-form" autocomplete="off">
       ${t.type === 'adjustment' ? '' : `<div class="seg full" style="margin-bottom:14px">
         ${[['expense', 'Spending'], ['income', 'Income'], ['transfer', 'Transfer']].map(([v, l]) => `<button type="button" data-t="${v}" class="${t.type === v ? 'on' : ''}">${l}</button>`).join('')}</div>`}
       <div class="form-grid tx-grid">
-        <label class="field">Amount<div style="display:flex;gap:8px"><input type="text" name="amount" inputmode="decimal" autofocus required value="${t.amount !== '' ? fmtInput(t.amount, t.currency) : ''}" placeholder="45.000 or 1,5jt" style="flex:1;min-width:0;font-size:18px;font-weight:700">
+        <label class="field">Amount<div style="display:flex;gap:8px"><input type="text" name="amount" inputmode="decimal" data-money data-nohint autofocus required value="${t.amount !== '' ? fmtInput(t.amount, t.currency) : ''}" placeholder="45.000 or 1,5jt" style="flex:1;min-width:0;font-size:18px;font-weight:700">
           <select name="currency" style="width:84px;flex:none">${CUR_CODES.map((c) => `<option ${t.currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
           <span class="hint" id="amt-preview"></span></label>
         <label class="field">Date<input type="date" name="date" required value="${t.date}"></label>
+        ${t.type === 'adjustment' ? '' : `<div class="field full fee-wrap">
+          <button type="button" class="link-btn ${hasFee ? 'hidden' : ''}" data-fee-open>${icon('plus')} Add admin fee</button>
+          <div class="fee-box ${hasFee ? '' : 'hidden'}">
+            <div class="fee-head"><span>Admin fee</span><button type="button" class="link-btn" data-fee-remove>Remove</button></div>
+            <div class="chip-row">${FEE_CHIPS.map((v) => `<button type="button" class="pick" data-fee="${v}">+${fmtInput(v)}</button>`).join('')}${FEE_CHIPS.slice(0, 2).map((v) => `<button type="button" class="pick" data-fee="${-v}">−${fmtInput(v)}</button>`).join('')}
+              <input type="text" name="fee" inputmode="decimal" data-money data-nohint value="${hasFee ? fmtInput(t.fee, t.currency) : ''}" placeholder="Other, e.g. 3.500 or -1.000" aria-label="Admin fee amount" style="flex:1;min-width:150px"></div>
+            <div class="hint" id="fee-help"></div>
+            <div class="fee-sum" id="fee-sum"></div>
+          </div></div>`}
         <label class="field full rate-row">Exchange rate<div style="display:flex;gap:8px;align-items:center"><span class="muted nowrap" id="rate-label">1 ${t.currency} = Rp</span><input type="text" name="rate" inputmode="decimal" value="${fmtInput(t.rate || rateOf(t.currency), 'USD')}" style="flex:1"></div><span class="hint">Saved with this transaction. Default comes from Settings.</span></label>
         <label class="field full">Description<input type="text" name="description" list="desc-list" value="${esc(t.description)}" placeholder="e.g. Indomaret, Gojek, Rent"><datalist id="desc-list">${descs.map((d) => `<option value="${esc(d)}">`).join('')}</datalist></label>
         <label class="field cat-row">Category<select name="categoryId"></select></label>
         <label class="field goal-row">Towards goal<select name="goalId"><option value="">— none —</option>${goals.map((g) => `<option value="${g.id}" ${t.goalId === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>
-        <div class="field full"><span>Who</span><div class="seg full" id="person-seg">${PERSON_IDS.map((p) => `<button type="button" data-p="${p}" class="${t.person === p ? 'on' : ''}"><span class="dot" style="background:${pcolor(p)}"></span>${esc(pname(p))}</button>`).join('')}</div></div>
+        <div class="field full who-row"><span>Who</span><div class="seg full" id="person-seg">${PEOPLE.map((p) => `<button type="button" data-p="${p}"><span class="dot" style="background:${pcolor(p)}"></span>${esc(pname(p))}</button>`).join('')}<button type="button" data-p="${SPLIT}"><span class="dot" style="background:${pcolor('junior')}"></span><span class="dot" style="background:${pcolor('sabit')};margin-left:-6px"></span>Split</button></div></div>
+        <div class="field full split-row">
+          <div class="chip-row">${SPLIT_CHIPS.map(([r, l]) => `<button type="button" class="pick" data-split="${r}">${l}</button>`).join('')}</div>
+          <div class="split-amts">
+            <label class="split-amt"><span><span class="dot" style="background:${pcolor('junior')}"></span>${esc(pname('junior'))}'s share</span><input type="text" name="shareJunior" inputmode="decimal" data-money data-nohint></label>
+            <div class="split-amt"><span><span class="dot" style="background:${pcolor('sabit')}"></span>${esc(pname('sabit'))}'s share</span><b id="share-sabit">–</b></div>
+          </div>
+          <span class="hint">Each share counts toward that person's budget and reports. "Paid from" is the account the money actually left.</span>
+        </div>
         <label class="field acc-row"><span id="acc-label">Paid from</span><select name="accountId">${accOpts(t.accountId)}</select></label>
-        <label class="field to-row">To account<select name="toAccountId">${accOpts(t.toAccountId)}</select></label>
+        <label class="field to-row"><span id="to-label">To account</span><select name="toAccountId">${accOpts(t.toAccountId)}</select></label>
         <label class="field to-amt-row">Amount received<input type="text" name="toAmount" inputmode="decimal" value="${t.toAmount != null && t.toAmount !== '' ? fmtInput(t.toAmount, 'USD') : ''}" placeholder="only if currencies differ"></label>
         <label class="field full">Notes<textarea name="notes" rows="2" placeholder="Optional">${esc(t.notes)}</textarea></label>
       </div>
@@ -405,7 +448,10 @@ function openTxForm(existing, preset = {}) {
     </div>`);
   const form = $('#tx-form', m);
   const F = (n) => form.elements[n];
-  let type = t.type, person = t.person;
+  const show = (sel, on) => { m.querySelectorAll(sel).forEach((el) => el.classList.toggle('hidden', !on)); };
+  let type = t.type, person = isSplit(t) ? SPLIT : t.person;
+  let ratio = clamp(Number(t.splitJunior ?? 0.5), 0, 1);
+  let feeOn = hasFee;
   const fillCats = () => {
     const ctype = type === 'income' ? 'income' : 'expense';
     const cur = F('categoryId').value || t.categoryId;
@@ -413,21 +459,51 @@ function openTxForm(existing, preset = {}) {
     const groups = ctype === 'income' ? [['Income', cats]] : GROUPS.map((g) => [g, cats.filter((c) => c.group === g)]);
     F('categoryId').innerHTML = `<option value="">Choose…</option>${groups.filter(([, l]) => l.length).map(([g, l]) => `<optgroup label="${g}">${l.map((c) => `<option value="${c.id}" ${cur === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</optgroup>`).join('')}`;
   };
+  const amountNow = () => { const a = parseAmount(F('amount').value); return isFinite(a) ? Math.abs(a) : NaN; };
+  const feeNow = () => { if (!feeOn || !F('fee')) return 0; const v = parseAmount(F('fee').value); return isFinite(v) ? v : 0; };
+  const savingsCat = () => { const c = store.catMap().get(F('categoryId').value); return type === 'expense' && !!c && c.group === 'Savings'; };
+  const updateShares = (fromInput = false) => {
+    const a = amountNow();
+    const cur = F('currency').value;
+    if (!fromInput) F('shareJunior').value = isFinite(a) ? fmtInput(Math.round(a * ratio * 100) / 100, cur) : '';
+    $('#share-sabit', m).textContent = isFinite(a) ? fmt(a * (1 - ratio), cur) : '–';
+    m.querySelectorAll('[data-split]').forEach((b) => b.classList.toggle('on', Math.abs(+b.dataset.split - ratio) < 0.001));
+  };
   const refresh = () => {
     const cur = F('currency').value;
-    m.querySelector('.rate-row').classList.toggle('hidden', cur === 'IDR');
+    show('.rate-row', cur !== 'IDR');
     $('#rate-label', m).textContent = `1 ${cur} = Rp`;
     const isTr = type === 'transfer', isAdj = type === 'adjustment';
-    m.querySelector('.cat-row').classList.toggle('hidden', isTr || isAdj);
-    m.querySelector('.to-row').classList.toggle('hidden', !isTr);
+    show('.cat-row', !isTr && !isAdj);
+    const sav = savingsCat();
+    show('.to-row', isTr || sav);
+    $('#to-label', m).textContent = isTr ? 'To account' : 'Moved into (optional)';
     const fromAcc = store.get('accounts', F('accountId').value), toAcc = store.get('accounts', F('toAccountId').value);
-    m.querySelector('.to-amt-row').classList.toggle('hidden', !isTr || !fromAcc || !toAcc || (toAcc.currency === cur));
+    show('.to-amt-row', (isTr || sav) && !!fromAcc && !!toAcc && toAcc.currency !== cur);
     $('#acc-label', m).textContent = isTr ? 'From account' : type === 'income' ? 'Received into' : isAdj ? 'Account' : 'Paid from';
-    const cat = store.catMap().get(F('categoryId').value);
-    m.querySelector('.goal-row').classList.toggle('hidden', !goals.length || isTr || type === 'income' || !(cat && cat.group === 'Savings') && !F('goalId').value);
+    show('.goal-row', goals.length && !isTr && type !== 'income' && (sav || !!F('goalId').value));
+    show('.split-row', person === SPLIT && !isTr && !isAdj);
+    show('.who-row', !isAdj);
+    m.querySelectorAll('[data-p]').forEach((x) => x.classList.toggle('on', x.dataset.p === person));
     const a = parseAmount(F('amount').value);
     const r = cur === 'IDR' ? 1 : parseAmount(F('rate').value, 'us');
-    $('#amt-preview', m).textContent = isFinite(a) ? (cur !== 'IDR' && isFinite(r) ? `≈ ${money(a * r)}` : money(a)) : '';
+    $('#amt-preview', m).textContent = isFinite(a) ? (cur !== 'IDR' && isFinite(r) ? `≈ ${money(a * r)}` : fmt(a, cur)) : '';
+    const fsum = $('#fee-sum', m);
+    if (fsum) {
+      const fee = feeNow(), fa = Math.abs(fee), A = amountNow();
+      m.querySelectorAll('[data-fee]').forEach((b) => b.classList.toggle('on', feeOn && +b.dataset.fee === fee));
+      const from = esc((fromAcc || {}).name || 'the account'), to = esc((toAcc || {}).name || 'the other account');
+      const mm = (v) => fmt(v, cur);
+      let txt = '';
+      if (feeOn && fa && isFinite(A)) {
+        if (type === 'income') txt = `<b>${mm(A - fa)}</b> arrives in ${from} · ${mm(A)} income − ${mm(fa)} fee`;
+        else if (type === 'transfer') txt = fee > 0 ? `${from} sends <b>${mm(A + fa)}</b> · ${to} receives ${mm(A)} · ${mm(fa)} fee` : `${from} sends <b>${mm(A)}</b> · ${to} receives ${mm(A - fa)} · ${mm(fa)} fee included`;
+        else txt = fee > 0 ? `<b>${mm(A + fa)}</b> leaves ${from} · ${mm(A)} + ${mm(fa)} fee` : `<b>${mm(A)}</b> leaves ${from} · ${mm(A - fa)} + ${mm(fa)} fee included`;
+      }
+      fsum.innerHTML = txt;
+      $('#fee-help', m).innerHTML = type === 'income' ? 'The fee is taken from what you receive. It is counted in "Bank &amp; Admin Fees".' : '<b>+</b> = charged on top of the amount · <b>−</b> = already inside the amount. It is counted in "Bank &amp; Admin Fees".';
+    }
+    if (person === SPLIT) updateShares(document.activeElement === F('shareJunior'));
   };
   fillCats(); refresh();
   m.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => {
@@ -437,10 +513,22 @@ function openTxForm(existing, preset = {}) {
   });
   m.querySelectorAll('[data-p]').forEach((b) => b.onclick = () => {
     const prevDefault = lastAccountFor(person);
-    person = b.dataset.p; m.querySelectorAll('[data-p]').forEach((x) => x.classList.toggle('on', x === b));
+    person = b.dataset.p;
     if (isNew && (F('accountId').value === prevDefault)) { F('accountId').value = lastAccountFor(person); }
     refresh();
   });
+  m.querySelectorAll('[data-split]').forEach((b) => b.onclick = () => { ratio = +b.dataset.split; updateShares(); });
+  F('shareJunior').addEventListener('input', () => {
+    const a = amountNow(); const s = parseAmount(F('shareJunior').value);
+    if (isFinite(a) && a > 0 && isFinite(s)) { ratio = clamp(s / a, 0, 1); updateShares(true); }
+  });
+  const feeOpen = m.querySelector('[data-fee-open]');
+  if (feeOpen) {
+    feeOpen.onclick = () => { feeOn = true; show('.fee-box', true); show('[data-fee-open]', false); refresh(); };
+    m.querySelector('[data-fee-remove]').onclick = () => { feeOn = false; F('fee').value = ''; show('.fee-box', false); show('[data-fee-open]', true); refresh(); };
+    m.querySelectorAll('[data-fee]').forEach((b) => b.onclick = () => { F('fee').value = (+b.dataset.fee < 0 ? '-' : '') + fmtInput(Math.abs(+b.dataset.fee), F('currency').value); refresh(); });
+    F('fee').addEventListener('input', refresh);
+  }
   F('currency').onchange = () => { F('rate').value = fmtInput(rateOf(F('currency').value), 'USD'); refresh(); };
   F('amount').oninput = refresh; F('rate').oninput = refresh;
   F('accountId').onchange = () => {
@@ -463,18 +551,29 @@ function openTxForm(existing, preset = {}) {
     const rate = cur === 'IDR' ? 1 : parseAmount(F('rate').value, 'us');
     if (!isFinite(rate) || rate <= 0) { toast('Please enter a valid exchange rate.', 'bad'); return null; }
     if (!F('date').value) { toast('Please choose a date.', 'bad'); return null; }
+    let fee = 0;
+    if (feeOn && F('fee') && F('fee').value.trim()) {
+      fee = parseAmount(F('fee').value);
+      if (!isFinite(fee)) { toast('The admin fee is not a number. Try 2.500 or -1.000.', 'bad'); F('fee').focus(); return null; }
+      if (Math.abs(fee) >= Math.abs(amount) && (fee < 0 || type === 'income')) { toast('The fee must be smaller than the amount.', 'bad'); return null; }
+    }
+    const toVisible = !m.querySelector('.to-row').classList.contains('hidden');
     const rec = {
-      ...t, type, person, amount, currency: cur, rate, date: F('date').value, description: F('description').value.trim(),
+      ...t, type, amount, currency: cur, rate, date: F('date').value, description: F('description').value.trim(),
+      person: type === 'transfer' || type === 'adjustment' ? (person === SPLIT ? me() : person) : person,
       categoryId: type === 'transfer' || type === 'adjustment' ? '' : F('categoryId').value, accountId: F('accountId').value,
-      toAccountId: type === 'transfer' ? F('toAccountId').value : '', notes: F('notes').value.trim(),
+      toAccountId: toVisible ? F('toAccountId').value : '', notes: F('notes').value.trim(),
       goalId: m.querySelector('.goal-row').classList.contains('hidden') ? '' : F('goalId').value,
+      fee,
     };
+    if (rec.person === SPLIT) rec.splitJunior = Math.round(ratio * 10000) / 10000; else delete rec.splitJunior;
     const toAmt = F('toAmount').value.trim();
-    rec.toAmount = type === 'transfer' && toAmt && !m.querySelector('.to-amt-row').classList.contains('hidden') ? parseAmount(toAmt) : null;
+    rec.toAmount = toVisible && toAmt && !m.querySelector('.to-amt-row').classList.contains('hidden') ? parseAmount(toAmt) : null;
     if (type === 'transfer') {
       if (!rec.accountId || !rec.toAccountId) { toast('Choose both accounts for a transfer.', 'bad'); return null; }
       if (rec.accountId === rec.toAccountId) { toast('Pick two different accounts.', 'bad'); return null; }
-    } else if (type !== 'adjustment' && !rec.categoryId) {
+    } else if (rec.toAccountId && rec.toAccountId === rec.accountId) { toast('"Moved into" must be a different account than "Paid from".', 'bad'); return null; }
+    if (type !== 'transfer' && type !== 'adjustment' && !rec.categoryId) {
       rec.categoryId = type === 'income' ? (store.get('categories', 'c_other-income') ? 'c_other-income' : '') : (store.get('categories', 'c_other') ? 'c_other' : '');
     }
     return rec;
@@ -483,8 +582,8 @@ function openTxForm(existing, preset = {}) {
     const rec = collect(); if (!rec) return;
     store.upsert('transactions', rec);
     Modal.close();
-    toast(isNew ? `Added ${money(txBase(rec))}${rec.description ? ` · ${rec.description}` : ''}` : 'Saved.');
-    if (more) openTxForm(null, { type: rec.type, date: rec.date, person: rec.person, accountId: rec.accountId, currency: rec.currency, rate: rec.rate });
+    toast(isNew ? `Added ${money(txBase(rec))}${rec.fee ? ' + fee' : ''}${rec.description ? ` · ${rec.description}` : ''}` : 'Saved.');
+    if (more) openTxForm(null, { type: rec.type, date: rec.date, person: rec.person, splitJunior: rec.splitJunior ?? 0.5, accountId: rec.accountId, currency: rec.currency, rate: rec.rate });
   };
   form.onsubmit = (e) => { e.preventDefault(); save(false); };
   form.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.name !== 'description') { e.preventDefault(); save(false); } });
@@ -509,11 +608,12 @@ function openCategoryForm(c) {
       <label class="field full">Name<input type="text" name="name" required value="${esc(c.name)}" placeholder="e.g. Pets, Coffee, Parking"></label>
       <label class="field">Type<select name="type"><option value="expense" ${c.type === 'expense' ? 'selected' : ''}>Spending</option><option value="income" ${c.type === 'income' ? 'selected' : ''}>Income</option></select></label>
       <label class="field grp">Group<select name="group">${GROUPS.map((g) => `<option ${c.group === g ? 'selected' : ''}>${g}</option>`).join('')}</select><span class="hint">Needs = essentials · Wants = lifestyle · Savings = money set aside</span></label>
+      <label class="field grp">Budget type<select name="fixed"><option value="0" ${!isFixed({ ...c, type: 'expense' }) ? 'selected' : ''}>Flexible: day-to-day, gets a daily allowance</option><option value="1" ${isFixed({ ...c, type: 'expense' }) ? 'selected' : ''}>Fixed: monthly bill, checked once a month</option></select></label>
       <label class="field">Colour<input type="color" name="color" value="${c.color}"></label>
     </div></form>
     <div class="modal-foot"><span class="spacer"></span><button class="btn" data-close>Cancel</button><button class="btn primary" data-save>${icon('check')} Save</button></div>`);
   const form = $('#cat-form', m);
-  const sync_ = () => m.querySelector('.grp').classList.toggle('hidden', form.elements.type.value === 'income');
+  const sync_ = () => m.querySelectorAll('.grp').forEach((el) => el.classList.toggle('hidden', form.elements.type.value === 'income'));
   form.elements.type.onchange = sync_; sync_();
   const save = () => {
     const name = form.elements.name.value.trim();
@@ -521,7 +621,7 @@ function openCategoryForm(c) {
     const type = form.elements.type.value;
     const dupe = store.all('categories').find((x) => x.id !== c.id && x.type === type && x.name.toLowerCase() === name.toLowerCase());
     if (dupe) { toast('A category with that name already exists.', 'bad'); return; }
-    store.upsert('categories', { ...c, name, type, group: type === 'income' ? 'Income' : form.elements.group.value, color: form.elements.color.value });
+    store.upsert('categories', { ...c, name, type, group: type === 'income' ? 'Income' : form.elements.group.value, color: form.elements.color.value, fixed: type === 'expense' && form.elements.fixed.value === '1' });
     Modal.close(); toast('Category saved.');
   };
   form.onsubmit = (e) => { e.preventDefault(); save(); };
@@ -735,10 +835,10 @@ function exportCSV() {
   const f = getFilter();
   const txs = filteredTx(f).sort((a, b) => a.date.localeCompare(b.date));
   const accs = store.accMap();
-  const rows = [['Date', 'Type', 'Description', 'Category', 'Group', 'Person', 'Account', 'To account', 'Amount', 'Currency', 'Rate', 'Amount (IDR)', 'Notes']];
+  const rows = [['Date', 'Type', 'Description', 'Category', 'Group', 'Person', 'Junior share %', 'Account', 'To account', 'Amount', 'Currency', 'Rate', 'Amount (IDR)', 'Admin fee', 'Notes']];
   for (const t of txs) {
     const c = catOf(t);
-    rows.push([t.date, t.type, t.description || '', c ? c.name : '', c ? c.group : '', pname(t.person), (accs.get(t.accountId) || {}).name || '', (accs.get(t.toAccountId) || {}).name || '', t.amount, t.currency || 'IDR', t.rate || 1, txBase(t), t.notes || '']);
+    rows.push([t.date, t.type, t.description || '', c ? c.name : '', c ? c.group : '', isSplit(t) ? 'Split' : pname(t.person), Math.round(shareOf(t, 'junior') * 100), (accs.get(t.accountId) || {}).name || '', (accs.get(t.toAccountId) || {}).name || '', t.amount, t.currency || 'IDR', t.rate || 1, txBase(t), Number(t.fee) || 0, t.notes || '']);
   }
   downloadFile(`transactions-${f.from}-to-${f.to}.csv`, '﻿' + toCSV(rows), 'text/csv');
   toast(`Exported ${txs.length} transactions (current filters).`);

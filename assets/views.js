@@ -107,7 +107,8 @@ function amountCell(t) {
   if (t.type === 'transfer') cls = 'amt-tr';
   if (t.type === 'adjustment') { cls = 'amt-tr'; sign = base >= 0 ? '+' : ''; }
   const orig = t.currency && t.currency !== 'IDR' ? `<span class="orig">${fmt(t.amount, t.currency)}</span>` : '';
-  return `<span class="${cls}">${sign}${money(base)}</span>${orig}`;
+  const fee = feeAbs(t) ? `<span class="orig">${(Number(t.fee) || 0) > 0 ? '+' : 'incl.'} ${money(feeIDR(t))} fee</span>` : '';
+  return `<span class="${cls}">${sign}${money(base)}</span>${orig}${fee}`;
 }
 function txTitle(t) {
   if (t.description) return esc(t.description);
@@ -120,22 +121,75 @@ function txCatCell(t) {
     const a = store.accMap(); return `<span class="chip">${icon('transfer')} ${esc((a.get(t.accountId) || {}).name || '?')} → ${esc((a.get(t.toAccountId) || {}).name || '?')}</span>`;
   }
   if (t.type === 'adjustment') return `<span class="chip">${icon('scale')} Adjustment</span>`;
+  if (t.type === 'expense' && t.toAccountId) { const a = store.accMap().get(t.toAccountId); if (a) return `${catChip(t.categoryId)} <span class="chip">→ ${esc(a.name)}</span>`; }
   return catChip(t.categoryId);
 }
 
 const Views = {};
 
 /* ================= DASHBOARD ================= */
+function darken(hex, amt = 0.45) {
+  const h = hex.replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map((x) => x + x).join('') : h, 16);
+  const f = (c) => Math.round(c * (1 - amt));
+  return `rgb(${f((n >> 16) & 255)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+/** Striped fill for the over-allowance part of a bar: darker shade with stripes of the person's colour, readable in light and dark mode. */
+function overPattern(hex) {
+  try {
+    const cv = document.createElement('canvas'); cv.width = 8; cv.height = 8;
+    const x = cv.getContext('2d'); if (!x) return darken(hex);
+    x.fillStyle = darken(hex, 0.5); x.fillRect(0, 0, 8, 8);
+    x.strokeStyle = hex; x.lineWidth = 2;
+    x.beginPath(); x.moveTo(-2, 10); x.lineTo(10, -2); x.moveTo(-2, 2); x.lineTo(2, -2); x.moveTo(6, 10); x.lineTo(10, 6); x.stroke();
+    return x.createPattern(cv, 'repeat') || darken(hex);
+  } catch (e) { return darken(hex); }
+}
+/** Option A data: flexible spending per person per day (or week/month) vs the daily allowance from the budget. */
+function allowanceData(f, lines) {
+  const bk = buckets(f);
+  const idx = new Map(bk.list.map((b, i) => [b.key, i]));
+  const people = f.person === 'junior' || f.person === 'sabit' ? [f.person] : PEOPLE;
+  const spent = {}, allow = {};
+  people.forEach((p) => { spent[p] = new Array(bk.list.length).fill(0); });
+  for (const l of lines) {
+    if (l.type !== 'expense' || isFixed(store.catMap().get(l.categoryId)) || !spent[l.person]) continue;
+    const i = idx.get(bk.keyOf(l.date)); if (i !== undefined) spent[l.person][i] += l.v;
+  }
+  const usePlan = f.person !== SPLIT;
+  people.forEach((p) => {
+    allow[p] = bk.list.map((b) => {
+      if (!usePlan) return 0;
+      let s = 0; const a = b.from < f.from ? f.from : b.from, e = b.to > f.to ? f.to : b.to;
+      for (let d = a; d <= e; d = addDays(d, 1)) s += dailyAllowance(d, p, f.cats);
+      return s;
+    });
+  });
+  const today = todayStr();
+  const hasPlan = people.some((p) => allow[p].some((v) => v > 0));
+  const summary = people.map((p) => {
+    let n = 0, over = 0, counted = 0;
+    bk.list.forEach((b, i) => {
+      if (b.from > today) return;
+      counted++;
+      if (allow[p][i] > 0 && spent[p][i] > allow[p][i] + 0.5) { n++; over += spent[p][i] - allow[p][i]; }
+    });
+    return { p, n, over, counted };
+  });
+  return { bk, people, spent, allow, hasPlan, summary };
+}
+
 Views.dashboard = () => {
   const f = getFilter();
+  const lines = filteredLines(f);
   const txs = filteredTx(f);
-  const S = summarize(txs);
+  const S = summarize(lines);
   const pr = prevRange(f);
-  const P = summarize(filteredTx({ ...f, ...pr }));
+  const P = summarize(filteredLines({ ...f, ...pr }));
   const B = budgetForRange(f);
   const today = todayStr();
   const asOf = f.to < today ? f.to : today;
-  const accs = accountsForPerson(f.person);
+  const accs = accountsForPerson(f.person === SPLIT ? 'all' : f.person);
   const balance = sum(accs, (a) => accountBalanceIDR(a, asOf));
   const budgetLeft = B.total - S.outflow;
   const used = B.total ? S.outflow / B.total : 0;
@@ -147,30 +201,34 @@ Views.dashboard = () => {
       `<button class="btn primary" data-action="import">${icon('upload')} Import from Google Sheets / CSV</button> <button class="btn" data-action="add-tx">${icon('plus')} Add a transaction</button>`)}</div>`;
   }
 
-  // insights
+  // "At a glance" insights
   const inProgress = f.from <= today && f.to >= today;
   const elapsed = inProgress ? daysBetween(f.from, today) + 1 : daysBetween(f.from, f.to) + 1;
   const daysLeft = inProgress ? daysBetween(today, f.to) + 1 : 0;
   const topCat = Object.entries(S.byCat).sort((a, b) => b[1] - a[1])[0];
   const insights = [];
-  insights.push(`<div class="insight"><b>${money(S.spend / Math.max(1, elapsed))}</b><span>average spending per day</span></div>`);
-  if (inProgress && B.total) insights.push(`<div class="insight"><b class="${budgetLeft < 0 ? 'bad' : ''}">${budgetLeft > 0 ? money(budgetLeft / daysLeft) : money(0)}</b><span>safe to spend per day · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left</span></div>`);
-  if (topCat) { const c = store.catMap().get(topCat[0]); insights.push(`<div class="insight"><b>${esc(c ? c.name : 'Uncategorized')}</b><span>biggest category · ${money(topCat[1], { compact: true })} (${pct(topCat[1] / (S.outflow || 1))})</span></div>`); }
-  if (f.person === 'all' && S.outflow) insights.push(`<div class="insight"><b>${PERSON_IDS.map((p) => `${esc(pname(p))} ${pct((S.byPerson[p] || 0) / S.outflow)}`).join(' · ')}</b><span>share of spending</span></div>`);
+  insights.push(`<div class="insight"><span class="ins-label">Average spending per day</span><b>${money(S.spend / Math.max(1, elapsed))}</b><span>over ${elapsed} day${elapsed === 1 ? '' : 's'}, savings not included</span></div>`);
+  if (inProgress && B.total) insights.push(`<div class="insight"><span class="ins-label">Safe to spend per day</span><b class="${budgetLeft < 0 ? 'bad' : ''}">${budgetLeft > 0 ? money(budgetLeft / daysLeft) : money(0)}</b><span>budget left ÷ ${daysLeft} day${daysLeft === 1 ? '' : 's'} remaining</span></div>`);
+  if (topCat) { const c = store.catMap().get(topCat[0]); insights.push(`<div class="insight" data-action="filter-cat" data-id="${topCat[0]}" style="cursor:pointer"><span class="ins-label">Biggest spending category</span><b>${esc(c ? c.name : 'Uncategorized')}</b><span>${money(topCat[1], { compact: true })} · ${pct(topCat[1] / (S.outflow || 1))} of all spending</span></div>`); }
+  if ((f.person === 'all' || f.person === SPLIT) && S.outflow) insights.push(`<div class="insight"><span class="ins-label">Who spent how much</span><b>${PEOPLE.map((p) => `${esc(pname(p))} ${pct((S.byPerson[p] || 0) / S.outflow)}`).join(' · ')}</b><span>split items counted by each share${S.split ? ` · ${money(S.split, { compact: true })} spent together` : ''}</span></div>`);
 
   const kpi = (label, value, sub, extra = '') => `<div class="card kpi"><span class="kpi-label">${label}</span><span class="kpi-value" title="${esc(value)}">${value}</span><span class="kpi-sub">${sub}</span>${extra}</div>`;
 
-  // budget rows
   const catRows = Object.keys({ ...B.perCat, ...S.byCat }).map((id) => ({ id, c: store.catMap().get(id), budget: B.perCat[id] || 0, actual: S.byCat[id] || 0 }))
     .filter((r) => r.c && r.c.type === 'expense' && (r.budget || r.actual))
     .sort((a, b) => (b.budget ? b.actual / b.budget : 9) - (a.budget ? a.actual / a.budget : 9) || b.actual - a.actual).slice(0, 8);
-
   const recent = [...txs].sort((a, b) => (b.date + (b.createdAt || b.updatedAt || '')).localeCompare(a.date + (a.createdAt || a.updatedAt || ''))).slice(0, 7);
   const biggest = txs.filter((t) => t.type === 'expense').sort((a, b) => txBase(b) - txBase(a)).slice(0, 5);
-  const goals = store.all('goals').filter((g) => f.person === 'all' || g.owner === f.person || g.owner === 'shared').slice(0, 4);
-
+  const goals = store.all('goals').filter((g) => f.person === 'all' || f.person === SPLIT || g.owner === f.person || g.owner === 'shared').slice(0, 4);
   const catTotal = Object.values(S.byCat).reduce((a, b) => a + b, 0);
   const catList = Object.entries(S.byCat).sort((a, b) => b[1] - a[1]);
+
+  // Option A summary (shown above the chart)
+  const A = allowanceData(f, lines);
+  const unitWord = A.bk.unit;
+  const summaryHTML = ui.dashTrend === 'flow' ? '' : !A.hasPlan
+    ? `<div class="over-summary"><span class="muted small">${f.person === SPLIT ? 'Split items have no allowance of their own. Pick Everyone, Junior or Sabit to compare with your budget.' : 'No flexible budget for this period yet. Set amounts for day-to-day categories on the <a href="#budget">Budget</a> page to see each person\'s daily allowance.'}</span></div>`
+    : `<div class="over-summary">${A.summary.map((s) => `<span class="os-item ${s.n ? 'is-over' : 'is-ok'}"><span class="dot" style="background:${pcolor(s.p)}"></span><b>${esc(pname(s.p))}</b> ${s.n ? `over on ${s.n} of ${s.counted} ${unitWord}${s.counted === 1 ? '' : 's'} <span class="os-amt">+${money(s.over, { compact: true })}</span>` : `within allowance on all ${s.counted} ${unitWord}${s.counted === 1 ? '' : 's'}`}</span>`).join('')}</div>`;
 
   return `
   <div class="grid kpis">
@@ -181,16 +239,25 @@ Views.dashboard = () => {
     B.total ? `${pct(used)} of ${money(B.total, { compact: true })} used` : '<a href="#budget">Set a budget →</a>', B.total ? progressBar(used) : '')}
     ${kpi('Current balance', money(balance, { compact: true }), `${accs.length} account${accs.length === 1 ? '' : 's'} · ${asOf === today ? 'today' : fmtDate(asOf)}`)}
   </div>
-  <div class="card section-gap"><div class="insights">${insights.join('')}</div></div>
+
+  <div class="card section-gap">
+    <div class="card-head"><h3>At a glance</h3><span class="sub">Quick insights for ${esc(filterLabel(f))}</span></div>
+    <div class="insights">${insights.join('')}</div>
+  </div>
 
   <div class="grid cols-2-1 section-gap">
     <div class="card">
-      <div class="card-head"><h3>Spending over time</h3><span class="sub">${S.count} transactions</span>
+      <div class="card-head"><h3>${ui.dashTrend === 'flow' ? 'Income vs spending' : 'Daily spending vs allowance'}</h3>
         <div class="right"><div class="seg">
-          <button class="${ui.dashTrend !== 'flow' ? 'on' : ''}" data-action="dash-trend" data-v="person">By person</button>
+          <button class="${ui.dashTrend !== 'flow' ? 'on' : ''}" data-action="dash-trend" data-v="allow">vs allowance</button>
           <button class="${ui.dashTrend === 'flow' ? 'on' : ''}" data-action="dash-trend" data-v="flow">Income vs spending</button>
         </div></div></div>
+      ${summaryHTML}
+      ${ui.dashTrend === 'flow' ? '' : `<div class="lg-row">${A.people.map((p) => `<span><span class="sw" style="background:${pcolor(p)}"></span>${esc(pname(p))}</span>`).join('')}
+        <span><span class="sw" style="background:repeating-linear-gradient(135deg, ${darken(pcolor(A.people[0]), 0.5)} 0 3px, ${pcolor(A.people[0])} 3px 5px)"></span>Darker striped part = over allowance</span>
+        <span><span class="sw sw-line"></span>Allowance</span></div>`}
       <div class="chart-box tall"><canvas id="ch-trend"></canvas></div>
+      ${ui.dashTrend === 'flow' ? '' : `<div class="hint" style="margin-top:6px">Day-to-day (flexible) spending only. Fixed bills like rent, installments and savings are checked monthly in Budget vs actual. Change which categories are fixed on the <a href="#categories">Categories</a> page.</div>`}
     </div>
     <div class="card">
       <div class="card-head"><h3>By category</h3><span class="sub">tap to filter</span></div>
@@ -203,10 +270,21 @@ Views.dashboard = () => {
   <div class="grid cols-3 section-gap">
     <div class="card">
       <div class="card-head"><h3>Budget vs actual</h3><div class="right"><a class="small" href="#budget">Plan →</a></div></div>
-      ${catRows.length ? catRows.map((r) => `<div class="budget-row"><div class="nowrap" style="overflow:hidden;text-overflow:ellipsis"><span class="dot" style="background:${r.c.color}"></span> ${esc(r.c.name)}</div>
+      ${catRows.length ? catRows.map((r) => `<div class="budget-row"><div class="nowrap" style="overflow:hidden;text-overflow:ellipsis"><span class="dot" style="background:${r.c.color}"></span> ${esc(r.c.name)}${isFixed(r.c) ? ' <span class="badge">fixed</span>' : ''}</div>
         <div class="small num nowrap"><b class="${r.budget && r.actual > r.budget ? 'bad' : ''}">${money(r.actual, { compact: true })}</b> <span class="muted">/ ${r.budget ? money(r.budget, { compact: true }) : 'no budget'}</span></div>
         ${progressBar(r.budget ? r.actual / r.budget : (r.actual ? 1.01 : 0))}</div>`).join('') : emptyState('No budget yet', 'Set monthly amounts per category on the Budget page.', '<a class="btn sm" href="#budget">Plan budget</a>')}
     </div>
+    <div class="card">
+      <div class="card-head"><h3>Goals</h3><div class="right"><a class="small" href="#goals">All goals →</a></div></div>
+      ${goals.length ? goals.map((g) => { const saved = goalSaved(g); const r = g.target ? saved / g.target : 0; return `<div class="budget-row"><div class="nowrap" style="overflow:hidden;text-overflow:ellipsis"><b>${esc(g.name)}</b> <span class="small muted">${esc(pname(g.owner))}</span></div><div class="small num nowrap"><b>${pct(r)}</b> <span class="muted">of ${money(g.target, { compact: true })}</span></div><div class="progress"><span style="width:${clamp(r * 100, 0, 100)}%;background:${g.color || 'var(--primary)'}"></span></div></div>`; }).join('') : emptyState('No goals yet', 'Emergency fund, holiday, wedding, house…', '<a class="btn sm" href="#goals">Add a goal</a>')}
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Recent</h3><div class="right"><a class="small" href="#log">All →</a></div></div>
+      <div class="list">${recent.map((t) => `<div class="list-row" data-action="edit-tx" data-id="${t.id}" style="cursor:pointer"><span class="dot" style="background:${(catOf(t) || {}).color || '#94a3b8'}"></span><div class="grow"><div class="title">${txTitle(t)}</div><div class="meta">${fmtDate(t.date, false)} · ${isSplit(t) ? `Split ${splitLabel(t)}` : esc(pname(t.person))}</div></div><div class="amount">${amountCell(t)}</div></div>`).join('') || '<div class="muted small">No transactions.</div>'}</div>
+    </div>
+  </div>
+
+  <div class="grid cols-3 section-gap">
     <div class="card">
       <div class="card-head"><h3>Needs · Wants · Savings</h3><span class="sub">share of income</span></div>
       <div class="chart-box short"><canvas id="ch-nws"></canvas></div>
@@ -216,20 +294,9 @@ Views.dashboard = () => {
       <div class="hint" style="margin-top:6px">Compared with the 50 / 30 / 20 rule of thumb.</div>
     </div>
     <div class="card">
-      <div class="card-head"><h3>Who spent what</h3></div>
+      <div class="card-head"><h3>Who spent what</h3><span class="sub">split items by share</span></div>
       <div class="chart-box short"><canvas id="ch-person"></canvas></div>
-      <div class="legend-list">${PERSON_IDS.map((p) => `<div class="lg" data-action="filter-person" data-id="${p}"><span class="dot" style="background:${pcolor(p)}"></span><span class="n">${esc(pname(p))}</span><span class="num">${money(S.byPerson[p] || 0, { compact: true })}</span><span class="p">${pct((S.byPerson[p] || 0) / (S.outflow || 1))}</span></div>`).join('')}</div>
-    </div>
-  </div>
-
-  <div class="grid cols-3 section-gap">
-    <div class="card">
-      <div class="card-head"><h3>Goals</h3><div class="right"><a class="small" href="#goals">All goals →</a></div></div>
-      ${goals.length ? goals.map((g) => { const saved = goalSaved(g); const r = g.target ? saved / g.target : 0; return `<div class="budget-row"><div class="nowrap" style="overflow:hidden;text-overflow:ellipsis"><b>${esc(g.name)}</b> <span class="small muted">${esc(pname(g.owner))}</span></div><div class="small num nowrap"><b>${pct(r)}</b> <span class="muted">of ${money(g.target, { compact: true })}</span></div><div class="progress"><span style="width:${clamp(r * 100, 0, 100)}%;background:${g.color || 'var(--primary)'}"></span></div></div>`; }).join('') : emptyState('No goals yet', 'Emergency fund, holiday, wedding, house…', '<a class="btn sm" href="#goals">Add a goal</a>')}
-    </div>
-    <div class="card">
-      <div class="card-head"><h3>Recent</h3><div class="right"><a class="small" href="#log">All →</a></div></div>
-      <div class="list">${recent.map((t) => `<div class="list-row" data-action="edit-tx" data-id="${t.id}" style="cursor:pointer"><span class="dot" style="background:${(catOf(t) || {}).color || '#94a3b8'}"></span><div class="grow"><div class="title">${txTitle(t)}</div><div class="meta">${fmtDate(t.date, false)} · ${esc(pname(t.person))}</div></div><div class="amount">${amountCell(t)}</div></div>`).join('') || '<div class="muted small">No transactions.</div>'}</div>
+      <div class="legend-list">${PEOPLE.map((p) => `<div class="lg" data-action="filter-person" data-id="${p}"><span class="dot" style="background:${pcolor(p)}"></span><span class="n">${esc(pname(p))}</span><span class="num">${money(S.byPerson[p] || 0, { compact: true })}</span><span class="p">${pct((S.byPerson[p] || 0) / (S.outflow || 1))}</span></div>`).join('')}</div>
     </div>
     <div class="card">
       <div class="card-head"><h3>Largest expenses</h3></div>
@@ -239,44 +306,57 @@ Views.dashboard = () => {
 };
 Views.dashboard.after = () => {
   const f = getFilter();
-  const txs = filteredTx(f);
   if (!store.activeTx().length) return;
-  const S = summarize(txs);
+  const lines = filteredLines(f);
+  const S = summarize(lines);
   const c = themeColors();
-  const bk = buckets(f);
-  const idx = new Map(bk.list.map((b, i) => [b.key, i]));
-  const labels = bk.list.map((b) => b.label);
   if (ui.dashTrend === 'flow') {
+    const bk = buckets(f);
+    const idx = new Map(bk.list.map((b, i) => [b.key, i]));
     const inc = new Array(bk.list.length).fill(0), out = new Array(bk.list.length).fill(0);
-    for (const t of txs) { const i = idx.get(bk.keyOf(t.date)); if (i === undefined) continue; if (t.type === 'income') inc[i] += txBase(t); else if (t.type === 'expense') out[i] += txBase(t); }
-    Charts.make('ch-trend', { type: 'bar', data: { labels, datasets: [
+    for (const l of lines) { const i = idx.get(bk.keyOf(l.date)); if (i === undefined) continue; if (l.type === 'income') inc[i] += l.v; else if (l.type === 'expense') out[i] += l.v; }
+    Charts.make('ch-trend', { type: 'bar', data: { labels: bk.list.map((b) => b.label), datasets: [
       { label: 'Income', data: inc, backgroundColor: hexA('#16a34a', 0.75), borderRadius: 4 },
       { label: 'Spending', data: out, backgroundColor: hexA('#f97316', 0.8), borderRadius: 4 },
     ] }, options: baseChartOptions() });
   } else {
-    const series = PERSON_IDS.map(() => new Array(bk.list.length).fill(0));
-    for (const t of txs) {
-      if (t.type !== 'expense') continue;
-      const i = idx.get(bk.keyOf(t.date)); if (i === undefined) continue;
-      const p = PERSON_IDS.indexOf(t.person); series[p < 0 ? 2 : p][i] += txBase(t);
-    }
-    const B = [];
-    // cumulative budget pace line (only for daily view with a budget)
-    const datasets = PERSON_IDS.map((p, k) => ({ label: pname(p), data: series[k], backgroundColor: hexA(pcolor(p), 0.8), borderRadius: 3, stack: 's' }));
-    const opts = baseChartOptions();
-    opts.scales.x.stacked = true; opts.scales.y.stacked = true;
-    if (bk.unit === 'day') {
-      const budget = budgetForRange(f).total;
-      if (budget) {
-        let run = 0; const cum = series[0].map((_, i) => (run += series[0][i] + series[1][i] + series[2][i]));
-        const today = todayStr();
-        datasets.push({ type: 'line', label: 'Cumulative', data: cum.map((v, i) => (bk.list[i].key <= today ? v : null)), borderColor: c.text, borderWidth: 2, pointRadius: 0, yAxisID: 'y2', tension: 0.2 });
-        datasets.push({ type: 'line', label: 'Budget pace', data: cum.map((_, i) => (budget * (i + 1)) / bk.list.length), borderColor: c.muted, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, yAxisID: 'y2' });
-        opts.scales.y2 = { position: 'right', ticks: { color: c.muted, font: { size: 11 }, callback: (v) => shortIDR(v) }, grid: { display: false }, border: { display: false } };
-      }
-    }
-    Charts.make('ch-trend', { type: 'bar', data: { labels, datasets }, options: opts });
-    void B;
+    const A = allowanceData(f, lines);
+    const datasets = [];
+    A.people.forEach((p) => {
+      datasets.push({ label: pname(p), data: A.spent[p].map((v, i) => (A.allow[p][i] > 0 ? Math.min(v, A.allow[p][i]) : v)), backgroundColor: pcolor(p), stack: p, _p: p, _part: 'in' });
+      datasets.push({ label: `${pname(p)} over`, data: A.spent[p].map((v, i) => (A.allow[p][i] > 0 ? Math.max(0, v - A.allow[p][i]) : 0)), backgroundColor: overPattern(pcolor(p)), borderColor: darken(pcolor(p), 0.5), borderWidth: 1, stack: p, _p: p, _part: 'over' });
+    });
+    const marker = {
+      id: 'allowMarker',
+      afterDatasetsDraw(ch) {
+        const ctx = ch.ctx; ctx.save(); ctx.strokeStyle = c.text; ctx.lineWidth = 2;
+        ch.data.datasets.forEach((d, di) => {
+          if (d._part !== 'in' || !ch.isDatasetVisible(di)) return;
+          const meta = ch.getDatasetMeta(di);
+          meta.data.forEach((bar, i) => {
+            const a = A.allow[d._p][i]; if (!a) return;
+            const y = ch.scales.y.getPixelForValue(a); const w = bar.width;
+            ctx.beginPath(); ctx.moveTo(bar.x - w / 2 - 1, y); ctx.lineTo(bar.x + w / 2 + 1, y); ctx.stroke();
+          });
+        });
+        ctx.restore();
+      },
+    };
+    const o = baseChartOptions();
+    o.plugins.legend.display = false;
+    o.scales.x.stacked = true; o.scales.y.stacked = true;
+    o.datasets = { bar: { categoryPercentage: 0.8, barPercentage: 0.92 } };
+    o.plugins.tooltip = {
+      mode: 'index', intersect: false, filter: (it) => it.dataset._part === 'in',
+      callbacks: {
+        label: (ctx) => {
+          const p = ctx.dataset._p, i = ctx.dataIndex, v = A.spent[p][i], a = A.allow[p][i];
+          if (!a) return `${pname(p)}: ${money(v)}`;
+          return `${pname(p)}: ${money(v)} of ${money(a)}${v > a ? ` · over by ${money(v - a)}` : ''}`;
+        },
+      },
+    };
+    Charts.make('ch-trend', { type: 'bar', data: { labels: A.bk.list.map((b) => b.label), datasets }, options: o, plugins: [marker] });
   }
   const catList = Object.entries(S.byCat).sort((a, b) => b[1] - a[1]);
   if (catList.length) {
@@ -287,20 +367,20 @@ Views.dashboard.after = () => {
         onClick: (_, els) => { if (els[0] && top[els[0].index]) App.setCatFilter(top[els[0].index][0]); } } });
   }
   const nws = ['Needs', 'Wants', 'Savings'];
+  const hScales = () => ({ x: { stacked: false, ticks: { color: c.muted, font: { size: 11 }, callback: (v) => shortIDR(v) }, grid: { color: c.border }, border: { display: false } }, y: { ticks: { color: c.muted }, grid: { display: false } } });
   const optsNws = baseChartOptions({ indexAxis: 'y' });
   optsNws.plugins.legend.display = false;
-  optsNws.scales = { x: { ticks: { color: c.muted, font: { size: 11 }, callback: (v) => shortIDR(v) }, grid: { color: c.border }, border: { display: false } }, y: { ticks: { color: c.muted }, grid: { display: false } } };
+  optsNws.scales = hScales();
   optsNws.plugins.tooltip = { callbacks: { label: (ctx) => money(ctx.parsed.x) } };
   Charts.make('ch-nws', { type: 'bar', data: { labels: [...nws, 'Income'], datasets: [{ data: [...nws.map((g) => S.byGroup[g] || 0), S.income], backgroundColor: [...nws.map((g) => GROUP_COLORS[g]), hexA('#16a34a', 0.35)], borderRadius: 5 }] }, options: optsNws });
 
-  const optsP = JSON.parse(JSON.stringify(optsNws));
-  optsP.scales.x.ticks.callback = (v) => shortIDR(v);
+  const optsP = baseChartOptions({ indexAxis: 'y' });
+  optsP.scales = hScales(); optsP.scales.x.stacked = true; optsP.scales.y.stacked = true;
   optsP.plugins.tooltip = { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${money(ctx.parsed.x)}` } };
   optsP.plugins.legend = { display: true, position: 'bottom', labels: { color: c.text, boxWidth: 10, boxHeight: 10, font: { size: 11 } } };
-  optsP.scales.x.stacked = true; optsP.scales.y.stacked = true;
-  optsP.indexAxis = 'y';
-  const byPG = {}; for (const t of txs) { if (t.type !== 'expense') continue; const g = groupOf(t); byPG[t.person] = byPG[t.person] || {}; byPG[t.person][g] = (byPG[t.person][g] || 0) + txBase(t); }
-  Charts.make('ch-person', { type: 'bar', data: { labels: PERSON_IDS.map(pname), datasets: nws.map((g) => ({ label: g, data: PERSON_IDS.map((p) => (byPG[p] || {})[g] || 0), backgroundColor: GROUP_COLORS[g], borderRadius: 3 })) }, options: optsP });
+  const byPG = {};
+  for (const l of lines) { if (l.type !== 'expense') continue; const g = (store.catMap().get(l.categoryId) || {}).group || 'Wants'; byPG[l.person] = byPG[l.person] || {}; byPG[l.person][g] = (byPG[l.person][g] || 0) + l.v; }
+  Charts.make('ch-person', { type: 'bar', data: { labels: PEOPLE.map(pname), datasets: nws.map((g) => ({ label: g, data: PEOPLE.map((p) => (byPG[p] || {})[g] || 0), backgroundColor: GROUP_COLORS[g], borderRadius: 3 })) }, options: optsP });
 };
 
 /* ================= SPENDING (transactions) ================= */
@@ -311,7 +391,7 @@ Views.spending = () => {
     && (ui.tx.account === 'all' || t.accountId === ui.tx.account || t.toAccountId === ui.tx.account));
   if (q) {
     txs = txs.filter((t) => {
-      const hay = `${t.description || ''} ${t.notes || ''} ${(catOf(t) || {}).name || ''} ${pname(t.person)} ${(store.accMap().get(t.accountId) || {}).name || ''} ${t.amount}`.toLowerCase();
+      const hay = `${t.description || ''} ${t.notes || ''} ${(catOf(t) || {}).name || ''} ${isSplit(t) ? 'split shared' : pname(t.person)} ${(store.accMap().get(t.accountId) || {}).name || ''} ${t.amount}`.toLowerCase();
       return q.split(/\s+/).every((w) => hay.includes(w));
     });
   }
@@ -322,10 +402,10 @@ Views.spending = () => {
     amount: (a, b) => txBase(a) - txBase(b),
     description: (a, b) => (a.description || '').localeCompare(b.description || ''),
     category: (a, b) => ((catOf(a) || {}).name || '').localeCompare((catOf(b) || {}).name || ''),
-    person: (a, b) => pname(a.person).localeCompare(pname(b.person)),
+    person: (a, b) => (isSplit(a) ? 'Split' : pname(a.person)).localeCompare(isSplit(b) ? 'Split' : pname(b.person)),
   }[key] || (() => 0);
   txs.sort((a, b) => dir * cmp(a, b));
-  const S = summarize(txs);
+  const S = summarize(txs.flatMap(linesOf).filter((l) => lineMatches(l, { ...f, cats: null, from: '0000', to: '9999' })));
   const shown = txs.slice(0, ui.tx.limit);
   const sel = App.sel;
   const allSel = shown.length && shown.every((t) => sel.has(t.id));
@@ -343,7 +423,7 @@ Views.spending = () => {
   </div>
   ${sel.size ? `<div class="bulkbar"><b>${sel.size} selected</b>
     <select id="bulk-cat"><option value="">Set category…</option>${store.categories().map((c) => `<option value="${c.id}">${esc(c.name)} (${c.type === 'income' ? 'income' : c.group})</option>`).join('')}</select>
-    <select id="bulk-person"><option value="">Set person…</option>${PERSON_IDS.map((p) => `<option value="${p}">${esc(pname(p))}</option>`).join('')}</select>
+    <select id="bulk-person"><option value="">Set person…</option>${PEOPLE.map((p) => `<option value="${p}">${esc(pname(p))}</option>`).join('')}<option value="split">Split 50:50</option></select>
     <select id="bulk-acc"><option value="">Set account…</option><option value="__none__">— none —</option>${accs.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select>
     <button class="btn sm danger" data-action="bulk-delete">${icon('trash')} Delete</button>
     <button class="btn sm ghost" data-action="bulk-clear">Clear</button></div>` : ''}
@@ -358,9 +438,9 @@ Views.spending = () => {
         <td class="nowrap d-date">${fmtDate(t.date)}</td>
         <td class="d-desc" data-action="edit-tx" data-id="${t.id}" style="cursor:pointer"><div class="desc">${txTitle(t)}</div>${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ''}</td>
         <td class="d-cat">${txCatCell(t)}</td>
-        <td class="d-person">${personChip(t.person)}</td>
+        <td class="d-person">${txPersonChip(t)}</td>
         <td class="d-acc small muted">${esc((store.accMap().get(t.accountId) || {}).name || '')}</td>
-        <td class="d-meta small muted">${fmtDate(t.date, false)} ${txCatCell(t)} ${personChip(t.person)}</td>
+        <td class="d-meta small muted">${fmtDate(t.date, false)} ${txCatCell(t)} ${txPersonChip(t)}</td>
         <td class="r nowrap d-amt">${amountCell(t)}</td>
         <td class="r d-act"><button class="btn ghost sm icon" data-action="edit-tx" data-id="${t.id}" aria-label="Edit">${icon('edit')}</button></td>
       </tr>`).join('')}</tbody></table></div>
@@ -379,7 +459,7 @@ Views.spending.after = () => {
     store.batch(() => App.sel.forEach((id) => { const t = store.get('transactions', id); if (t && (t.type === 'expense' || t.type === 'income')) store.upsert('transactions', { ...t, categoryId: v, type: c.type }); }));
     toast(`Updated ${App.sel.size} transactions.`);
   });
-  bulk('#bulk-person', (v) => { store.batch(() => App.sel.forEach((id) => { const t = store.get('transactions', id); if (t) store.upsert('transactions', { ...t, person: v }); })); toast('Updated.'); });
+  bulk('#bulk-person', (v) => { store.batch(() => App.sel.forEach((id) => { const t = store.get('transactions', id); if (t) store.upsert('transactions', v === SPLIT ? { ...t, person: SPLIT, splitJunior: 0.5 } : { ...t, person: v }); })); toast('Updated.'); });
   bulk('#bulk-acc', (v) => { store.batch(() => App.sel.forEach((id) => { const t = store.get('transactions', id); if (t) store.upsert('transactions', { ...t, accountId: v === '__none__' ? '' : v }); })); toast('Updated.'); });
 };
 
@@ -390,12 +470,12 @@ Views.budget = () => {
   ui.budgetMonth = ym;
   const { src, inherited } = budgetsFor(ym);
   const mf = { from: `${ym}-01`, to: endOfMonth(ym), person: f.person, cats: f.cats };
-  const txs = filteredTx(mf);
   const actual = {};
-  for (const t of txs) if (t.type === 'expense' || t.type === 'income') actual[t.categoryId] = (actual[t.categoryId] || 0) + txBase(t);
+  for (const l of filteredLines(mf)) actual[l.categoryId] = (actual[l.categoryId] || 0) + l.v;
   const cats = store.categories().filter((c) => !f.cats || f.cats.has(c.id));
-  const cols = PERSON_IDS;
-  const planned = (c) => (f.person === 'all' ? budgetCell(ym, c.id, 'all') : budgetCell(ym, c.id, f.person));
+  const cols = PEOPLE;
+  const onePerson = f.person === 'junior' || f.person === 'sabit';
+  const planned = (c) => (onePerson ? budgetCell(ym, c.id, f.person) : budgetCell(ym, c.id, 'all'));
   const sections = [['Income', cats.filter((c) => c.type === 'income')], ...GROUPS.map((g) => [g, cats.filter((c) => c.type === 'expense' && c.group === g)])];
   const tot = { incomePlan: 0, incomeAct: 0, expPlan: 0, expAct: 0, savPlan: 0, savAct: 0 };
   for (const c of cats) {
@@ -409,8 +489,8 @@ Views.budget = () => {
     const left = p - a; const isInc = c.type === 'income';
     const ratio = p ? a / p : (a ? 1.01 : 0);
     return `<tr>
-      <td class="nowrap"><span class="dot" style="background:${c.color}"></span> ${esc(c.name)}</td>
-      ${cols.map((pid) => { const v = budgetCell(ym, c.id, pid); return `<td class="r ${f.person !== 'all' && f.person !== pid ? 'hide-sm' : ''}" ${f.person !== 'all' && f.person !== pid ? 'style="opacity:.45"' : ''}><input class="cell ${inherited ? 'inherited' : ''}" inputmode="decimal" data-bud="${c.id}|${pid}" value="${v ? fmtInput(v) : ''}" placeholder="0" aria-label="${esc(c.name)} budget for ${esc(pname(pid))}"></td>`; }).join('')}
+      <td class="nowrap"><span class="dot" style="background:${c.color}"></span> ${esc(c.name)}${isFixed(c) ? ' <span class="badge">fixed</span>' : ''}</td>
+      ${cols.map((pid) => { const v = budgetCell(ym, c.id, pid); return `<td class="r ${onePerson && f.person !== pid ? 'hide-sm' : ''}" ${onePerson && f.person !== pid ? 'style="opacity:.45"' : ''}><input class="cell ${inherited ? 'inherited' : ''}" inputmode="decimal" data-bud="${c.id}|${pid}" value="${v ? fmtInput(v) : ''}" placeholder="0" aria-label="${esc(c.name)} budget for ${esc(pname(pid))}"></td>`; }).join('')}
       <td class="r num"><b>${money(p)}</b></td>
       <td class="r num">${money(a)}</td>
       <td class="r num ${!isInc && left < 0 ? 'bad' : ''} ${isInc && left > 0 && isPast ? 'warn' : ''}">${isInc ? money(a - p, { sign: true }) : money(left)}</td>
@@ -428,7 +508,7 @@ Views.budget = () => {
     <button class="btn danger" data-action="bud-clear">${icon('trash')} Clear month</button>
   </div>
   ${inherited ? `<div class="banner info">${icon('info')}<div class="grow small">No budget saved for <b>${fmtMonth(ym, true)}</b> yet, so it's using <b>${fmtMonth(src, true)}</b>'s plan (budgets roll forward). Editing any amount saves a copy for ${fmtMonth(ym, true)}.</div></div>` : ''}
-  ${!src ? `<div class="banner info">${icon('info')}<div class="grow small"><b>Plan your month:</b> type how much each of you expects to earn and spend per category. Use <b>${esc(pname('shared'))}</b> for joint costs like rent and groceries. The plan carries forward to later months until you change it. Tip: "1,5jt" or "750rb" work too.</div></div>` : ''}
+  ${!src ? `<div class="banner info">${icon('info')}<div class="grow small"><b>Plan your month:</b> type how much each of you expects to earn and spend per category. For joint costs like rent and groceries, put each person's share in their own column (e.g. half each). The plan carries forward to later months until you change it. Tip: "1,5jt" or "750rb" work too.</div></div>` : ''}
   <div class="grid kpis k4">
     <div class="card kpi"><span class="kpi-label">Planned income</span><span class="kpi-value">${money(tot.incomePlan, { compact: true })}</span><span class="kpi-sub">actual ${money(tot.incomeAct, { compact: true })}</span></div>
     <div class="card kpi"><span class="kpi-label">Planned spending</span><span class="kpi-value">${money(tot.expPlan - tot.savPlan, { compact: true })}</span><span class="kpi-sub">actual ${money(tot.expAct - tot.savAct, { compact: true })}</span>${progressBar((tot.expPlan - tot.savPlan) ? (tot.expAct - tot.savAct) / (tot.expPlan - tot.savPlan) : 0)}</div>
@@ -436,9 +516,10 @@ Views.budget = () => {
     <div class="card kpi"><span class="kpi-label">${unalloc >= 0 ? 'Not yet allocated' : 'Over-allocated'}</span><span class="kpi-value ${unalloc < 0 ? 'bad' : ''}">${money(unalloc, { compact: true })}</span><span class="kpi-sub">income − planned outflow</span></div>
   </div>
   <div class="card section-gap">
-    <div class="card-head"><h3>${fmtMonth(ym, true)} plan</h3><span class="sub">${f.person === 'all' ? 'Totals for both of you' : `Showing ${esc(pname(f.person))}'s plan & actuals`}${f.cats ? ' · filtered categories' : ''}</span></div>
+    <div class="card-head"><h3>${fmtMonth(ym, true)} plan</h3><span class="sub">${onePerson ? `Showing ${esc(pname(f.person))}'s plan & actuals` : f.person === SPLIT ? 'Totals plan · actuals of split items only' : 'Totals for both of you'}${f.cats ? ' · filtered categories' : ''}</span></div>
+    ${(() => { const per = PEOPLE.map((p) => [p, dailyAllowance(`${ym}-01`, p, f.cats)]); const tot = per.reduce((a, [, v]) => a + v, 0); return tot ? `<div class="banner info" style="margin-bottom:12px">${icon('calendar')}<div class="grow small"><b>Daily allowance for day-to-day spending:</b> ${per.map(([p, v]) => `${esc(pname(p))} ${money(v)}`).join(' · ')} per day. This is the flexible budget (categories not marked <span class="badge">fixed</span>) ÷ ${daysInMonth(ym)} days, and it's what the dashboard bars compare against.</div></div>` : ''; })()}
     <div class="table-wrap"><table class="t">
-      <thead><tr><th>Category</th>${cols.map((p) => `<th class="r ${f.person !== 'all' && f.person !== p ? 'hide-sm' : ''}"><span class="dot" style="background:${pcolor(p)}"></span> ${esc(pname(p))}</th>`).join('')}<th class="r">Plan</th><th class="r">Actual</th><th class="r">Left</th><th></th></tr></thead>
+      <thead><tr><th>Category</th>${cols.map((p) => `<th class="r ${onePerson && f.person !== p ? 'hide-sm' : ''}"><span class="dot" style="background:${pcolor(p)}"></span> ${esc(pname(p))}</th>`).join('')}<th class="r">Plan</th><th class="r">Actual</th><th class="r">Left</th><th></th></tr></thead>
       <tbody>
       ${sections.filter(([, list]) => list.length).map(([g, list]) => {
     const pSum = sum(list, planned), aSum = sum(list, (c) => actual[c.id] || 0);
@@ -472,7 +553,7 @@ Views.budget.after = () => {
   for (const ym of months) {
     const mf = { from: `${ym}-01`, to: endOfMonth(ym), person: f.person, cats: f.cats };
     bud.push(budgetForRange(mf).total);
-    act.push(sum(filteredTx(mf).filter((t) => t.type === 'expense'), txBase));
+    act.push(sum(filteredLines(mf).filter((l) => l.type === 'expense'), (l) => l.v));
   }
   const c = themeColors();
   Charts.make('ch-bud', { type: 'bar', data: { labels: months.map((x) => fmtMonth(x)), datasets: [
@@ -484,21 +565,22 @@ Views.budget.after = () => {
 /* ================= CATEGORIES ================= */
 Views.categories = () => {
   const f = getFilter();
-  const txs = filteredTx({ ...f, cats: null });
+  const lns = filteredLines({ ...f, cats: null });
   const stats = {};
-  for (const t of txs) { if (!t.categoryId) continue; const s = (stats[t.categoryId] = stats[t.categoryId] || { n: 0, v: 0 }); s.n++; s.v += txBase(t); }
+  for (const l of lns) { if (!l.categoryId) continue; const s = (stats[l.categoryId] = stats[l.categoryId] || { n: new Set(), v: 0 }); s.n.add(l.t.id); s.v += l.v; }
+  for (const k of Object.keys(stats)) stats[k].n = stats[k].n.size;
   const ym = thisMonth();
   const months = monthsBetween(f.from.slice(0, 7), f.to.slice(0, 7));
   const showTrend = months.length >= 2 && months.length <= 12;
   const trend = {};
-  if (showTrend) for (const t of txs) { if (t.type !== 'expense') continue; const k = t.categoryId; trend[k] = trend[k] || {}; const mk = t.date.slice(0, 7); trend[k][mk] = (trend[k][mk] || 0) + txBase(t); }
+  if (showTrend) for (const l of lns) { if (l.type !== 'expense') continue; const k = l.categoryId; trend[k] = trend[k] || {}; const mk = l.date.slice(0, 7); trend[k][mk] = (trend[k][mk] || 0) + l.v; }
   const list = (type) => {
     const cats = store.categories(type).filter((c) => !f.cats || f.cats.has(c.id));
     const groups = type === 'income' ? [['Income', cats]] : GROUPS.map((g) => [g, cats.filter((c) => c.group === g)]);
     const total = sum(cats, (c) => (stats[c.id] || {}).v || 0);
     return `<div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th class="r">Txns</th><th class="r">Total</th><th class="r hide-sm">Share</th>${type === 'expense' ? '<th class="r hide-sm">Budget / mo</th>' : ''}<th></th></tr></thead><tbody>
       ${groups.filter(([, l]) => l.length).map(([g, l]) => `${type === 'expense' ? `<tr class="group"><td colspan="6">${g}</td></tr>` : ''}${l.map((c) => { const s = stats[c.id] || { n: 0, v: 0 }; return `<tr>
-        <td><span class="dot" style="background:${c.color}"></span> <b>${esc(c.name)}</b></td>
+        <td><span class="dot" style="background:${c.color}"></span> <b>${esc(c.name)}</b>${c.type === 'expense' ? ` <button class="badge ${isFixed(c) ? '' : 'good'}" data-action="toggle-fixed" data-id="${c.id}" title="Click to switch between Fixed (monthly bill) and Flexible (daily allowance)" style="border:0;cursor:pointer">${isFixed(c) ? 'fixed' : 'flexible'}</button>` : ''}</td>
         <td class="r num">${s.n}</td><td class="r num">${money(s.v)}</td><td class="r num hide-sm muted">${total ? pct(s.v / total) : '–'}</td>
         ${type === 'expense' ? `<td class="r num hide-sm muted">${money(budgetCell(ym, c.id, 'all'))}</td>` : ''}
         <td class="r nowrap"><button class="btn ghost sm icon" data-action="filter-cat" data-id="${c.id}" title="Show on dashboard">${icon('filter')}</button><button class="btn ghost sm icon" data-action="edit-cat" data-id="${c.id}" title="Edit">${icon('edit')}</button><button class="btn ghost sm icon danger" data-action="del-cat" data-id="${c.id}" title="Delete">${icon('trash')}</button></td></tr>`; }).join('')}`).join('')}
@@ -506,7 +588,7 @@ Views.categories = () => {
   };
   const expCats = store.categories('expense').filter((c) => !f.cats || f.cats.has(c.id)).filter((c) => trend[c.id]);
   return `
-  <div class="toolbar"><span class="muted small">Numbers use the selected date range & person.</span><span class="grow"></span>
+  <div class="toolbar"><span class="muted small">Numbers use the selected date range & person. <b>Flexible</b> categories get a daily allowance on the dashboard; <b>fixed</b> ones (rent, installments…) are checked monthly. Click the label to switch.</span><span class="grow"></span>
     <button class="btn primary" data-action="add-cat">${icon('plus')} Add category</button></div>
   <div class="grid cols-2">
     <div class="card"><div class="card-head"><h3>Spending categories</h3><span class="sub">grouped as Needs · Wants · Savings</span></div>${list('expense')}</div>
@@ -520,7 +602,7 @@ Views.categories = () => {
 };
 Views.categories.after = () => {
   const f = getFilter();
-  const S = summarize(filteredTx(f));
+  const S = summarize(filteredLines(f));
   const list = Object.entries(S.byCat).sort((a, b) => b[1] - a[1]).slice(0, 12);
   const cats = list.map(([id]) => store.catMap().get(id) || { name: 'Uncategorized', color: '#94a3b8' });
   const o = baseChartOptions({ indexAxis: 'y' });
@@ -587,11 +669,11 @@ Views.balance = () => {
   const today = todayStr();
   const asOf = f.to < today ? f.to : today;
   const startRef = addDays(f.from, -1);
-  const accs = accountsForPerson(f.person);
+  const accs = accountsForPerson(f.person === SPLIT ? 'all' : f.person);
   const all = store.all('accounts');
   const total = sum(accs, (a) => accountBalanceIDR(a, asOf));
   const byOwner = (o) => sum(all.filter((a) => a.owner === o), (a) => accountBalanceIDR(a, asOf));
-  const S = summarize(filteredTx({ ...f, cats: null }));
+  const S = summarize(filteredLines({ ...f, cats: null }));
   const unassigned = filteredTx({ ...f, cats: null }).filter((t) => (t.type === 'expense' || t.type === 'income') && !t.accountId).length;
   const noOpening = accs.filter((a) => !a.openingDate && !Number(a.opening)).length;
   return `
@@ -632,14 +714,14 @@ Views.balance = () => {
 };
 Views.balance.after = () => {
   const f = getFilter();
-  const accs = accountsForPerson(f.person);
+  const accs = accountsForPerson(f.person === SPLIT ? 'all' : f.person);
   if (!accs.length) return;
   const today = todayStr();
   const end = f.to < today ? f.to : today;
   const bk = buckets({ from: f.from, to: end });
   const points = bk.list.map((b) => (b.to > end ? end : b.to));
   const c = themeColors();
-  const owners = f.person === 'all' ? PERSON_IDS.filter((p) => accs.some((a) => a.owner === p)) : [f.person];
+  const owners = f.person === 'all' || f.person === SPLIT ? PERSON_IDS.filter((p) => accs.some((a) => a.owner === p)) : [f.person];
   const datasets = owners.map((p) => ({ label: pname(p), data: points.map((d) => sum(accs.filter((a) => a.owner === p), (a) => accountBalanceIDR(a, d))), borderColor: pcolor(p), backgroundColor: hexA(pcolor(p), 0.12), fill: true, tension: 0.25, pointRadius: points.length > 40 ? 0 : 2, stack: 'b' }));
   const o = baseChartOptions();
   o.scales.y.stacked = true;
@@ -670,7 +752,7 @@ Views.settings = () => {
     <div class="card">
       <div class="card-head"><h3>People</h3></div>
       <div class="kv">
-        ${PERSON_IDS.map((p) => `<span>${p === 'shared' ? 'Joint label' : p === 'junior' ? 'Person 1' : 'Person 2'}</span>
+        ${PERSON_IDS.map((p) => `<span>${p === 'shared' ? 'Joint accounts & goals' : p === 'junior' ? 'Person 1' : 'Person 2'}</span>
           <div style="display:flex;gap:8px"><input type="text" data-person-name="${p}" value="${esc(P[p].name)}" style="flex:1"><input type="color" data-person-color="${p}" value="${P[p].color}"></div>`).join('')}
       </div>
     </div>

@@ -377,3 +377,32 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
   .card { padding: 14px; }
   .table-wrap { margin: 0 -14px; padding: 0 14px; }
 }
+
+/* ---------- v1.2: allowance chart, insights, fee & split controls ---------- */
+.ins-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 3px; }
+.insight b { margin-bottom: 1px; }
+.over-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 10px; }
+.os-item { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 12.5px; background: var(--surface-2); color: var(--text-2); }
+.os-item b { font-weight: 700; color: var(--text); }
+.os-item.is-over { background: var(--bad-soft); }
+.os-item.is-ok { background: var(--good-soft); }
+.os-amt { font-weight: 700; color: var(--bad); }
+.lg-row { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.lg-row .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.lg-row .sw-line { width: 12px; height: 0; border-top: 2px solid var(--text); border-radius: 0; vertical-align: 3px; }
+.link-btn { background: none; border: 0; padding: 2px 0; color: var(--primary); font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; justify-self: start; }
+.link-btn svg.i { width: 15px; height: 15px; }
+.fee-wrap { gap: 0; }
+.fee-box { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 11px; background: var(--surface-2); }
+.fee-head { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pick { border: 1px solid var(--border); background: var(--surface); color: var(--text-2); border-radius: 999px; padding: 4px 11px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-variant-numeric: tabular-nums; }
+.pick:hover { border-color: var(--primary); }
+.pick.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.fee-sum { font-size: 13px; color: var(--text); font-weight: 400; }
+.fee-sum:empty { display: none; }
+.split-row { gap: 8px; }
+.split-amts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.split-amt { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.split-amt b { font-size: 15px; padding: 7px 0; color: var(--text); font-variant-numeric: tabular-nums; }
+.split-amt input { width: 100%; font-weight: 400; }

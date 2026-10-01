@@ -135,8 +135,8 @@ function guessPerson(v) {
     const nm = (P[id].name || id).toLowerCase();
     if (s === nm || s === id || (s.length >= 2 && (nm.startsWith(s) || s.startsWith(nm.slice(0, 3)))) || (s.length === 1 && nm[0] === s)) return id;
   }
-  if (/(both|shared|bersama|berdua|joint|\bkita\b|\bwe\b|\bus\b|together|household|rumah|couple|keluarga|family|all|semua|\+|&|\band\b|\bdan\b)/.test(s)) return 'shared';
-  if (s === (P.shared.name || '').toLowerCase()) return 'shared';
+  if (/(both|shared|split|bersama|berdua|joint|\bkita\b|\bwe\b|\bus\b|together|household|rumah|couple|keluarga|family|all|semua|\+|&|\band\b|\bdan\b)/.test(s)) return SPLIT;
+  if (s === (P.shared.name || '').toLowerCase()) return SPLIT;
   return null;
 }
 function guessType(v) {
@@ -390,7 +390,7 @@ const Importer = {
           <label class="field">If no Type column<select data-imp-opt="signMode">
             ${[['allExpense', 'All rows are spending (negative = refund)'], ['negIsExpense', 'Negative = spending, positive = income'], ['negIsIncome', 'Positive = spending, negative = income']].map(([v, l]) => `<option value="${v}" ${o.signMode === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           <label class="field">Default person<select data-imp-opt="defaultPerson">
-            ${PERSON_IDS.map((p) => `<option value="${p}" ${o.defaultPerson === p ? 'selected' : ''}>${esc(pname(p))}</option>`).join('')}</select><span class="hint">Used when the Person column is empty/missing</span></label>
+            ${[...PEOPLE, SPLIT].map((p) => `<option value="${p}" ${o.defaultPerson === p ? 'selected' : ''}>${p === SPLIT ? 'Split 50:50' : esc(pname(p))}</option>`).join('')}</select><span class="hint">Used when the Person column is empty/missing</span></label>
           <label class="field">Default currency<select data-imp-opt="defaultCurrency">
             ${CUR_CODES.map((c) => `<option ${o.defaultCurrency === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
           <label class="field">Default account<select data-imp-opt="defaultAccount"><option value="">— none —</option>
@@ -418,12 +418,12 @@ const Importer = {
           <optgroup label="Spending">${store.categories('expense').map((c) => `<option value="${c.id}" ${sel === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</optgroup>
           <optgroup label="Income">${store.categories('income').map((c) => `<option value="${c.id}" ${sel === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</optgroup>`;
       };
-      const perOpts = (sel) => PERSON_IDS.map((p) => `<option value="${p}" ${sel === p ? 'selected' : ''}>${esc(pname(p))}</option>`).join('');
+      const perOpts = (sel) => [...PEOPLE, SPLIT].map((p) => `<option value="${p}" ${sel === p ? 'selected' : ''}>${p === SPLIT ? 'Split 50:50' : esc(pname(p))}</option>`).join('');
       const accOpts = (sel, val) => `<option value="__new__" ${sel === '__new__' ? 'selected' : ''}>+ Create account "${esc(val)}"</option><option value="" ${sel === '' ? 'selected' : ''}>— no account —</option>
         ${store.all('accounts').map((a) => `<option value="${a.id}" ${sel === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}`;
       const typeOpts = (sel) => [['expense', 'Spending'], ['income', 'Income']].map(([k, l]) => `<option value="${k}" ${sel === k ? 'selected' : ''}>${l}</option>`).join('');
       body = section('Categories', 'category', catOpts, 'Match each category from your sheet to one in the tracker, or create it.')
-        + section('People', 'person', perOpts, `Who each value refers to. Use "${esc(pname('shared'))}" for joint spending.`)
+        + section('People', 'person', perOpts, `Who each value refers to. Use "Split 50:50" for things you share (you can change the ratio later).`)
         + section('Accounts / payment methods', 'account', accOpts, 'Used for the Current Balance page. You can set opening balances later.')
         + section('Types', 'type', typeOpts, 'Which values mean income vs. spending.');
       foot = `<button class="btn" data-imp-go="2">${icon('left')} Back</button><span class="spacer"></span><button class="btn primary" data-imp-go="4">Next ${icon('right')}</button>`;
@@ -450,7 +450,7 @@ const Importer = {
         ${bad.length ? `<div class="banner bad">${icon('alert')}<div class="grow small"><b>${bad.length} row(s) will be skipped:</b><br>${bad.slice(0, 8).map((r) => `Row ${r._row}: ${esc(r.errs.join(', '))}`).join('<br>')}${bad.length > 8 ? `<br>…and ${bad.length - 8} more` : ''}</div></div>` : ''}
         <div class="small muted" style="margin-bottom:6px">Dates read as ${s.detectedDateFmt === 'mdy' ? 'Month/Day/Year' : 'Day/Month/Year'} · change on the previous step if wrong. Preview (first 60):</div>
         <div class="preview-table"><table class="t"><thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Person</th><th>Account</th><th class="r">Amount</th></tr></thead><tbody>
-          ${willImport.slice(0, 60).map((r) => `<tr><td class="nowrap">${fmtDate(r.date)}</td><td>${esc(r.description)}</td><td>${catName(r)}</td><td>${esc(pname(r.person))}</td>
+          ${willImport.slice(0, 60).map((r) => `<tr><td class="nowrap">${fmtDate(r.date)}</td><td>${esc(r.description)}</td><td>${catName(r)}</td><td>${r.person === SPLIT ? 'Split 50:50' : esc(pname(r.person))}</td>
             <td>${r.accountId === '__new__' ? `${esc(r.accRaw)} <span class="badge">new</span>` : esc((store.accMap().get(r.accountId) || {}).name || '–')}</td>
             <td class="r nowrap ${r.type === 'income' ? 'amt-in' : ''}">${r.type === 'income' ? '+' : ''}${fmt(r.amount, r.currency)}</td></tr>`).join('')}
         </tbody></table></div>`;
@@ -502,12 +502,12 @@ const Importer = {
         let accountId = r.accountId;
         if (accountId === '__new__') {
           const key = r.accRaw.toLowerCase();
-          if (!newAccs[key]) newAccs[key] = store.upsert('accounts', { id: uid('a_'), name: r.accRaw, type: /cash|tunai/i.test(r.accRaw) ? 'cash' : /ovo|gopay|dana|shopeepay|linkaja|wallet/i.test(r.accRaw) ? 'ewallet' : /credit|kartu kredit|cc\b/i.test(r.accRaw) ? 'credit' : 'bank', owner: guessPerson(r.accRaw) || r.person, currency: 'IDR', opening: 0, openingDate: '' }).id;
+          if (!newAccs[key]) newAccs[key] = store.upsert('accounts', { id: uid('a_'), name: r.accRaw, type: /cash|tunai/i.test(r.accRaw) ? 'cash' : /ovo|gopay|dana|shopeepay|linkaja|wallet/i.test(r.accRaw) ? 'ewallet' : /credit|kartu kredit|cc\b/i.test(r.accRaw) ? 'credit' : 'bank', owner: (() => { const g = guessPerson(r.accRaw) || r.person; return g === SPLIT ? 'shared' : g; })(), currency: 'IDR', opening: 0, openingDate: '' }).id;
           accountId = newAccs[key];
         }
         store.upsert('transactions', {
           id: uid('t_'), date: r.date, type: r.type, amount: r.amount, currency: r.currency, rate: r.rate,
-          description: r.description, categoryId, person: r.person, accountId: accountId || '', notes: r.notes, importId,
+          description: r.description, categoryId, person: r.person, ...(r.person === SPLIT ? { splitJunior: 0.5 } : {}), accountId: accountId || '', notes: r.notes, importId,
         });
       }
     });
