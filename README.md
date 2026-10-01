@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/32804226/README.md)
+[README.md](https://github.com/user-attachments/files/32887412/README.md)
 # Our Budget — couple budget tracker
 
 A budget tracker for two people (Junior & Sabit) that runs on **GitHub Pages** and saves your data to a **private GitHub repo**, so both of you always see the same numbers on any phone or laptop.
@@ -6,7 +6,7 @@ A budget tracker for two people (Junior & Sabit) that runs on **GitHub Pages** a
 | Page | What it does |
 |---|---|
 | **Dashboard** | Income, spending, savings, budget left and current balance, with comparisons to the previous period, spending over time (by person or income vs spending), by category, Needs/Wants/Savings vs the 50/30/20 rule, who spent what, goals, recent and largest expenses, "safe to spend per day". |
-| **Spending** | Every transaction (spending, income, transfers). Search, sort, bulk-edit category/person/account, import, export CSV. |
+| **Log** | Every transaction (spending, income, transfers). Search, sort, bulk-edit category/person/account, import, export CSV. |
 | **Budget** | Monthly plan per category **per person** (Junior / Sabit / Shared) plus planned income. Plans roll forward to later months until you change them. Plan vs actual, and budget vs actual by month. |
 | **Categories** | Add, edit, recolour, merge or delete categories, grouped as Needs / Wants / Savings. Monthly trend table per category. |
 | **Goals** | Savings goals with target and date, progress, "needed per month", on-track status. Add money manually, link a savings account, or tag "Savings & Investment" spending to a goal. |
@@ -77,7 +77,7 @@ The token is stored only in that browser (localStorage) and is sent only to `api
 
 1. Open your spending sheet in Google Sheets. Select the whole table **including the header row** and copy (Ctrl/Cmd + C).
    *(Or File → Download → Comma-separated values (.csv).)*
-2. In the tracker: **Spending → Import** (or Settings → Import).
+2. In the tracker: **Log → Import** (or Settings → Import).
 3. **Paste** (or upload the CSV) → **Next**.
 4. **Match columns.** The importer guesses English and Indonesian headers (Tanggal, Keterangan, Kategori, Nominal/Jumlah, Siapa/Oleh, Metode Bayar/Rekening…). Only **Date** and **Amount** are required. Options:
    - Date format (auto-detects DD/MM/YYYY vs MM/DD/YYYY; also reads "15 Agustus 2026", "Aug 3, 2026" and Sheets serial numbers).
@@ -87,7 +87,7 @@ The token is stored only in that browser (localStorage) and is sent only to `api
 5. **Match values.** Map each of your sheet's categories to a tracker category (or create it), each person value (e.g. "Berdua" → Shared), and each payment method to an account (or create it).
 6. **Review** totals, skipped rows and possible duplicates → **Import**. There's an **Undo** button right after.
 
-No category column? The importer guesses from the description (Indomaret → Groceries, Gojek → Transport, GoFood → Food Delivery, PLN → Utilities, Netflix → Subscriptions, Gaji → Salary …) and falls back to "Other". Fix the rest in bulk on the Spending page (tick rows → *Set category*).
+No category column? The importer guesses from the description (Indomaret → Groceries, Gojek → Transport, GoFood → Food Delivery, PLN → Utilities, Netflix → Subscriptions, Gaji → Salary …) and falls back to "Other". Fix the rest in bulk on the Log page (tick rows → *Set category*).
 
 `template/import-template.csv` shows a clean layout if you want to tidy your sheet first.
 
@@ -95,7 +95,7 @@ No category column? The importer guesses from the description (Indomaret → Gro
 
 ## 3. Everyday use
 
-- **Add spending:** the round **+** button (or press **N** on a keyboard). Type the amount like `45.000`, `45000` or `45rb`. Pick who spent it — **Junior**, **Sabit**, or **Shared** for joint costs. Descriptions you've used before are suggested, and their last category is filled in automatically.
+- **Add spending:** the round **+** button (or press **N** on a keyboard). Type the amount like `45.000`, `45000` or `45rb`, or type `45` and tap **000**. Pick who spent it — **Junior**, **Sabit**, or **Shared** for joint costs. Descriptions you've used before are suggested, and their last category is filled in automatically.
 - **Foreign currency:** pick JPY/USD/SGD in the amount field; the rate is pre-filled from Settings and saved with the transaction.
 - **Budget:** go to Budget, type amounts per person/category. Next month automatically reuses this plan; edit any cell to make a month-specific version. "Use last month's actuals" is a quick way to create a first plan from your imported data.
 - **Balances:** on Balance, add your real accounts with a starting balance and date (e.g. balance on 1 July). Record moves between accounts as **Transfers** (they don't count as spending). Use **Reconcile** whenever the bank balance differs.
@@ -146,4 +146,3 @@ template/import-template.csv
 ```
 
 No build step and no server: plain HTML/CSS/JavaScript plus Chart.js from cdnjs.
-
