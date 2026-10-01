@@ -515,7 +515,7 @@ const Importer = {
     // show the imported period
     const dates = rows.map((r) => r.date).sort();
     if (dates.length) { ui.filter.preset = 'custom'; ui.filter.from = dates[0].slice(0, 7) + '-01'; ui.filter.to = endOfMonth(dates[dates.length - 1].slice(0, 7)); saveUI(); }
-    App.go('spending');
+    App.go('log');
     toast(`Imported ${rows.length} transactions.`, '', {
       label: 'Undo', fn: () => {
         store.batch(() => { store.all('transactions').filter((t) => t.importId === importId).forEach((t) => store.remove('transactions', t.id)); });

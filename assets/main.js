@@ -5,7 +5,7 @@
 
 const PAGES = [
   ['dashboard', 'Dashboard', 'dashboard'],
-  ['spending', 'Spending', 'receipt'],
+  ['log', 'Log', 'receipt'],
   ['budget', 'Budget', 'pie'],
   ['categories', 'Categories', 'tag'],
   ['goals', 'Goals', 'target'],
@@ -46,7 +46,8 @@ const App = {
     sync.start();
   },
   onHash(first = false) {
-    const p = (location.hash || '').replace('#', '') || ui.page || 'dashboard';
+    let p = (location.hash || '').replace('#', '') || ui.page || 'dashboard';
+    if (p === 'spending') p = 'log'; // old name of the Log page (bookmarks, saved state)
     const page = PAGES.some((x) => x[0] === p) ? p : 'dashboard';
     if (!first && page !== ui.page) this.sel.clear();
     ui.page = page; saveUI();
@@ -336,7 +337,7 @@ function welcome() {
       <div class="seg full" style="margin-bottom:16px">${['junior', 'sabit'].map((p) => `<button data-me="${p}" style="padding:12px"><span class="dot" style="background:${pcolor(p)}"></span>${esc(pname(p))}</button>`).join('')}</div>
       <ol class="small" style="padding-left:18px;color:var(--text-2);line-height:1.7;margin:0">
         <li><b>Connect GitHub</b> in Settings so both of you share the same data.</li>
-        <li><b>Import</b> your past spending from Google Sheets (Spending → Import).</li>
+        <li><b>Import</b> your past spending from Google Sheets (Log → Import).</li>
         <li>Set a monthly <b>Budget</b>, your <b>Goals</b> and account <b>Balances</b>.</li>
       </ol>
     </div>`);
@@ -369,7 +370,8 @@ function openTxForm(existing, preset = {}) {
       ${t.type === 'adjustment' ? '' : `<div class="seg full" style="margin-bottom:14px">
         ${[['expense', 'Spending'], ['income', 'Income'], ['transfer', 'Transfer']].map(([v, l]) => `<button type="button" data-t="${v}" class="${t.type === v ? 'on' : ''}">${l}</button>`).join('')}</div>`}
       <div class="form-grid">
-        <label class="field">Amount<div style="display:flex;gap:8px"><input type="text" name="amount" inputmode="decimal" autofocus required value="${t.amount !== '' ? fmtInput(t.amount, t.currency) : ''}" placeholder="e.g. 45.000 or 1,5jt" style="flex:1;font-size:18px;font-weight:700">
+        <label class="field">Amount<div style="display:flex;gap:8px"><input type="text" name="amount" inputmode="decimal" autofocus required value="${t.amount !== '' ? fmtInput(t.amount, t.currency) : ''}" placeholder="e.g. 45.000 or 1,5jt" style="flex:1;min-width:0;font-size:18px;font-weight:700">
+          <button type="button" class="btn zeros-btn" data-zeros title="Add three zeros (×1.000)" aria-label="Add three zeros" style="padding-inline:10px;font-variant-numeric:tabular-nums">000</button>
           <select name="currency" style="width:88px">${CUR_CODES.map((c) => `<option ${t.currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
           <span class="hint" id="amt-preview"></span></label>
         <label class="field">Date<input type="date" name="date" required value="${t.date}"></label>
@@ -404,6 +406,7 @@ function openTxForm(existing, preset = {}) {
   const refresh = () => {
     const cur = F('currency').value;
     m.querySelector('.rate-row').classList.toggle('hidden', cur === 'IDR');
+    m.querySelector('[data-zeros]').classList.toggle('hidden', cur === 'USD' || cur === 'SGD');
     $('#rate-label', m).textContent = `1 ${cur} = Rp`;
     const isTr = type === 'transfer', isAdj = type === 'adjustment';
     m.querySelector('.cat-row').classList.toggle('hidden', isTr || isAdj);
@@ -431,6 +434,20 @@ function openTxForm(existing, preset = {}) {
   });
   F('currency').onchange = () => { F('rate').value = fmtInput(rateOf(F('currency').value), 'USD'); refresh(); };
   F('amount').oninput = refresh; F('rate').oninput = refresh;
+  // [000] shortcut: multiplies what you typed by 1.000 (45 → 45.000 → 45.000.000; 1,5 → 1.500)
+  const zerosBtn = m.querySelector('[data-zeros]');
+  zerosBtn.addEventListener('pointerdown', (e) => e.preventDefault()); // keep the field focused (and the phone keyboard open)
+  zerosBtn.addEventListener('mousedown', (e) => e.preventDefault());
+  zerosBtn.onclick = () => {
+    const inp = F('amount'); const cur = F('currency').value;
+    const raw = inp.value.trim();
+    const n = raw ? parseAmount(raw) : NaN;
+    if (!isFinite(n) || n === 0) { inp.focus(); return; }
+    inp.value = fmtInput(n * 1000, cur === 'IDR' || cur === 'JPY' ? cur : 'USD');
+    inp.focus();
+    try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) { /* ignore */ }
+    refresh();
+  };
   F('accountId').onchange = () => {
     const a = store.get('accounts', F('accountId').value);
     if (a && isNew && !F('amount').value) { F('currency').value = a.currency; F('rate').value = fmtInput(rateOf(a.currency), 'USD'); }

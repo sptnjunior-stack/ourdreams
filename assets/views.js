@@ -228,7 +228,7 @@ Views.dashboard = () => {
       ${goals.length ? goals.map((g) => { const saved = goalSaved(g); const r = g.target ? saved / g.target : 0; return `<div class="budget-row"><div class="nowrap" style="overflow:hidden;text-overflow:ellipsis"><b>${esc(g.name)}</b> <span class="small muted">${esc(pname(g.owner))}</span></div><div class="small num nowrap"><b>${pct(r)}</b> <span class="muted">of ${money(g.target, { compact: true })}</span></div><div class="progress"><span style="width:${clamp(r * 100, 0, 100)}%;background:${g.color || 'var(--primary)'}"></span></div></div>`; }).join('') : emptyState('No goals yet', 'Emergency fund, holiday, wedding, house…', '<a class="btn sm" href="#goals">Add a goal</a>')}
     </div>
     <div class="card">
-      <div class="card-head"><h3>Recent</h3><div class="right"><a class="small" href="#spending">All →</a></div></div>
+      <div class="card-head"><h3>Recent</h3><div class="right"><a class="small" href="#log">All →</a></div></div>
       <div class="list">${recent.map((t) => `<div class="list-row" data-action="edit-tx" data-id="${t.id}" style="cursor:pointer"><span class="dot" style="background:${(catOf(t) || {}).color || '#94a3b8'}"></span><div class="grow"><div class="title">${txTitle(t)}</div><div class="meta">${fmtDate(t.date, false)} · ${esc(pname(t.person))}</div></div><div class="amount">${amountCell(t)}</div></div>`).join('') || '<div class="muted small">No transactions.</div>'}</div>
     </div>
     <div class="card">
@@ -599,7 +599,7 @@ Views.balance = () => {
     <button class="btn" data-action="add-transfer">${icon('transfer')} Transfer</button>
     <button class="btn primary" data-action="add-acc">${icon('plus')} Add account</button></div>
   ${noOpening ? `<div class="banner info">${icon('info')}<div class="grow small"><b>Tip:</b> set each account's <b>starting balance</b> (and the date it applies from) so balances match your bank. Or use <b>Reconcile</b> to type in today's real balance and the tracker records the difference.</div></div>` : ''}
-  ${unassigned ? `<div class="banner">${icon('alert')}<div class="grow small">${unassigned} transaction(s) in this period have no account, so they don't affect balances. Assign accounts in bulk on the <a href="#spending">Spending</a> page (select rows → "Set account").</div></div>` : ''}
+  ${unassigned ? `<div class="banner">${icon('alert')}<div class="grow small">${unassigned} transaction(s) in this period have no account, so they don't affect balances. Assign accounts in bulk on the <a href="#log">Log</a> page (select rows → "Set account").</div></div>` : ''}
   <div class="grid kpis k4">
     <div class="card kpi"><span class="kpi-label">${f.person === 'all' ? 'Total balance' : `${esc(pname(f.person))}'s balance`}</span><span class="kpi-value">${money(total, { compact: true })}</span><span class="kpi-sub">${accs.length} accounts</span></div>
     ${PERSON_IDS.map((p) => `<div class="card kpi"><span class="kpi-label"><span class="dot" style="background:${pcolor(p)}"></span>${esc(pname(p))}</span><span class="kpi-value">${money(byOwner(p), { compact: true })}</span><span class="kpi-sub">${all.filter((a) => a.owner === p).length} accounts</span></div>`).join('')}
@@ -754,3 +754,6 @@ Views.settings.after = () => {
     } catch (e) { toast(`Could not restore: ${e.message}`, 'bad'); }
   };
 };
+
+/* The transactions page is called "Log" (spending, income and transfers). */
+Views.log = Views.spending;
