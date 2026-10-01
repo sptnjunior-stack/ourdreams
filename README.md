@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/32887412/README.md)
+[README.md](https://github.com/user-attachments/files/32888576/README.md)
 # Our Budget — couple budget tracker
 
 A budget tracker for two people (Junior & Sabit) that runs on **GitHub Pages** and saves your data to a **private GitHub repo**, so both of you always see the same numbers on any phone or laptop.
@@ -95,7 +95,7 @@ No category column? The importer guesses from the description (Indomaret → Gro
 
 ## 3. Everyday use
 
-- **Add spending:** the round **+** button (or press **N** on a keyboard). Type the amount like `45.000`, `45000` or `45rb`, or type `45` and tap **000**. Pick who spent it — **Junior**, **Sabit**, or **Shared** for joint costs. Descriptions you've used before are suggested, and their last category is filled in automatically.
+- **Add spending:** the round **+** button (or press **N** on a keyboard). Type the amount like `45.000`, `45000` or `45rb`. Shortcuts work in every amount field (goals, budgets, balances): `750rb` = 750.000, `1,5jt` = 1.500.000. Pick who spent it — **Junior**, **Sabit**, or **Shared** for joint costs. Descriptions you've used before are suggested, and their last category is filled in automatically.
 - **Foreign currency:** pick JPY/USD/SGD in the amount field; the rate is pre-filled from Settings and saved with the transaction.
 - **Budget:** go to Budget, type amounts per person/category. Next month automatically reuses this plan; edit any cell to make a month-specific version. "Use last month's actuals" is a quick way to create a first plan from your imported data.
 - **Balances:** on Balance, add your real accounts with a starting balance and date (e.g. balance on 1 July). Record moves between accounts as **Transfers** (they don't count as spending). Use **Reconcile** whenever the bank balance differs.
