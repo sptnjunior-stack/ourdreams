@@ -380,9 +380,9 @@ function openTxForm(existing, preset = {}) {
     <form class="modal-body" id="tx-form" autocomplete="off">
       ${t.type === 'adjustment' ? '' : `<div class="seg full" style="margin-bottom:14px">
         ${[['expense', 'Spending'], ['income', 'Income'], ['transfer', 'Transfer']].map(([v, l]) => `<button type="button" data-t="${v}" class="${t.type === v ? 'on' : ''}">${l}</button>`).join('')}</div>`}
-      <div class="form-grid">
-        <label class="field">Amount<div style="display:flex;gap:8px"><input type="text" name="amount" inputmode="decimal" autofocus required value="${t.amount !== '' ? fmtInput(t.amount, t.currency) : ''}" placeholder="e.g. 45.000 or 1,5jt" style="flex:1;min-width:0;font-size:18px;font-weight:700">
-          <select name="currency" style="width:88px">${CUR_CODES.map((c) => `<option ${t.currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+      <div class="form-grid tx-grid">
+        <label class="field">Amount<div style="display:flex;gap:8px"><input type="text" name="amount" inputmode="decimal" autofocus required value="${t.amount !== '' ? fmtInput(t.amount, t.currency) : ''}" placeholder="45.000 or 1,5jt" style="flex:1;min-width:0;font-size:18px;font-weight:700">
+          <select name="currency" style="width:84px;flex:none">${CUR_CODES.map((c) => `<option ${t.currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
           <span class="hint" id="amt-preview"></span></label>
         <label class="field">Date<input type="date" name="date" required value="${t.date}"></label>
         <label class="field full rate-row">Exchange rate<div style="display:flex;gap:8px;align-items:center"><span class="muted nowrap" id="rate-label">1 ${t.currency} = Rp</span><input type="text" name="rate" inputmode="decimal" value="${fmtInput(t.rate || rateOf(t.currency), 'USD')}" style="flex:1"></div><span class="hint">Saved with this transaction. Default comes from Settings.</span></label>
