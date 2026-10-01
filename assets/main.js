@@ -33,6 +33,17 @@ const App = {
     window.addEventListener('hashchange', () => this.onHash());
     document.addEventListener('click', (e) => this.onClick(e));
     document.addEventListener('change', (e) => this.onChange(e));
+    // live "= Rp 1.500.000" hint under amount fields, so 750rb / 1,5jt are easy to check
+    document.addEventListener('input', (e) => {
+      const el = e.target;
+      if (!el.matches || !el.matches('input[data-money]')) return;
+      let h = el.nextElementSibling;
+      if (!h || !h.classList.contains('money-hint')) { h = document.createElement('span'); h.className = 'hint money-hint'; el.insertAdjacentElement('afterend', h); }
+      const curSel = el.form && el.form.elements.currency;
+      const cur = el.dataset.money || (curSel && curSel.value) || 'IDR';
+      const v = parseAmount(el.value);
+      h.textContent = !el.value.trim() ? '' : isFinite(v) ? `= ${fmt(v, cur)}` : 'Not a number yet. Try 750rb, 1,5jt or 1.500.000';
+    });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && Modal.isOpen()) Modal.close();
       const tag = (document.activeElement || {}).tagName;
@@ -371,7 +382,6 @@ function openTxForm(existing, preset = {}) {
         ${[['expense', 'Spending'], ['income', 'Income'], ['transfer', 'Transfer']].map(([v, l]) => `<button type="button" data-t="${v}" class="${t.type === v ? 'on' : ''}">${l}</button>`).join('')}</div>`}
       <div class="form-grid">
         <label class="field">Amount<div style="display:flex;gap:8px"><input type="text" name="amount" inputmode="decimal" autofocus required value="${t.amount !== '' ? fmtInput(t.amount, t.currency) : ''}" placeholder="e.g. 45.000 or 1,5jt" style="flex:1;min-width:0;font-size:18px;font-weight:700">
-          <button type="button" class="btn zeros-btn" data-zeros title="Add three zeros (×1.000)" aria-label="Add three zeros" style="padding-inline:10px;font-variant-numeric:tabular-nums">000</button>
           <select name="currency" style="width:88px">${CUR_CODES.map((c) => `<option ${t.currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
           <span class="hint" id="amt-preview"></span></label>
         <label class="field">Date<input type="date" name="date" required value="${t.date}"></label>
@@ -406,7 +416,6 @@ function openTxForm(existing, preset = {}) {
   const refresh = () => {
     const cur = F('currency').value;
     m.querySelector('.rate-row').classList.toggle('hidden', cur === 'IDR');
-    m.querySelector('[data-zeros]').classList.toggle('hidden', cur === 'USD' || cur === 'SGD');
     $('#rate-label', m).textContent = `1 ${cur} = Rp`;
     const isTr = type === 'transfer', isAdj = type === 'adjustment';
     m.querySelector('.cat-row').classList.toggle('hidden', isTr || isAdj);
@@ -434,20 +443,6 @@ function openTxForm(existing, preset = {}) {
   });
   F('currency').onchange = () => { F('rate').value = fmtInput(rateOf(F('currency').value), 'USD'); refresh(); };
   F('amount').oninput = refresh; F('rate').oninput = refresh;
-  // [000] shortcut: multiplies what you typed by 1.000 (45 → 45.000 → 45.000.000; 1,5 → 1.500)
-  const zerosBtn = m.querySelector('[data-zeros]');
-  zerosBtn.addEventListener('pointerdown', (e) => e.preventDefault()); // keep the field focused (and the phone keyboard open)
-  zerosBtn.addEventListener('mousedown', (e) => e.preventDefault());
-  zerosBtn.onclick = () => {
-    const inp = F('amount'); const cur = F('currency').value;
-    const raw = inp.value.trim();
-    const n = raw ? parseAmount(raw) : NaN;
-    if (!isFinite(n) || n === 0) { inp.focus(); return; }
-    inp.value = fmtInput(n * 1000, cur === 'IDR' || cur === 'JPY' ? cur : 'USD');
-    inp.focus();
-    try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) { /* ignore */ }
-    refresh();
-  };
   F('accountId').onchange = () => {
     const a = store.get('accounts', F('accountId').value);
     if (a && isNew && !F('amount').value) { F('currency').value = a.currency; F('rate').value = fmtInput(rateOf(a.currency), 'USD'); }
@@ -564,12 +559,12 @@ function openGoalForm(g) {
   const m = Modal.open(`${Modal.head(isNew ? 'New goal' : 'Edit goal')}
     <form class="modal-body" id="goal-form"><div class="form-grid">
       <label class="field full">Goal name<input type="text" name="name" required value="${esc(g.name)}" placeholder="e.g. Emergency fund, Japan trip, Wedding"></label>
-      <label class="field">Target amount (IDR)<input type="text" name="target" inputmode="decimal" value="${g.target ? fmtInput(g.target) : ''}" placeholder="e.g. 50jt"></label>
+      <label class="field">Target amount (IDR)<input type="text" name="target" inputmode="decimal" data-money value="${g.target ? fmtInput(g.target) : ''}" placeholder="e.g. 50jt"></label>
       <label class="field">Target date<input type="date" name="targetDate" value="${g.targetDate || ''}"></label>
       <div class="field full"><span>Whose goal</span><div class="seg full" id="g-owner">${PERSON_IDS.map((p) => `<button type="button" data-o="${p}" class="${g.owner === p ? 'on' : ''}">${esc(pname(p))}</button>`).join('')}</div></div>
       <label class="field">Link to account (optional)<select name="accountId"><option value="">— track manually —</option>${store.all('accounts').map((a) => `<option value="${a.id}" ${g.accountId === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select><span class="hint">Progress = that account's balance</span></label>
       <label class="field">Colour<input type="color" name="color" value="${g.color}"></label>
-      ${isNew ? '<label class="field full">Already saved (optional)<input type="text" name="start" inputmode="decimal" placeholder="Amount you already have for this goal"></label>' : ''}
+      ${isNew ? '<label class="field full">Already saved (optional)<input type="text" name="start" inputmode="decimal" data-money placeholder="e.g. 5jt or 750rb"></label>' : ''}
       <label class="field full">Notes<textarea name="notes" rows="2">${esc(g.notes || '')}</textarea></label>
     </div></form>
     <div class="modal-foot">${isNew ? '' : `<button class="btn danger" data-del>${icon('trash')} Delete</button>`}<span class="spacer"></span><button class="btn" data-close>Cancel</button><button class="btn primary" data-save>${icon('check')} Save</button></div>`);
@@ -609,7 +604,7 @@ function openContributionForm(g) {
   const m = Modal.open(`${Modal.head(`Add money · ${esc(g.name)}`, `${money(goalSaved(g))} of ${money(g.target)} saved`)}
     <form class="modal-body" id="gc-form"><div class="seg full" style="margin-bottom:14px"><button type="button" class="on" data-s="1">Add</button><button type="button" data-s="-1">Withdraw</button></div>
     <div class="form-grid">
-      <label class="field">Amount (IDR)<input type="text" name="amount" inputmode="decimal" autofocus placeholder="e.g. 2jt"></label>
+      <label class="field">Amount (IDR)<input type="text" name="amount" inputmode="decimal" data-money autofocus placeholder="e.g. 2jt or 500rb"></label>
       <label class="field">Date<input type="date" name="date" value="${todayStr()}"></label>
       <div class="field full"><span>Who</span><div class="seg full">${PERSON_IDS.map((p) => `<button type="button" data-p="${p}" class="${person === p ? 'on' : ''}">${esc(pname(p))}</button>`).join('')}</div></div>
       <label class="field full">Note<input type="text" name="note" placeholder="Optional"></label>
@@ -639,7 +634,7 @@ function openAccountForm(a) {
       <label class="field">Type<select name="type">${Object.entries(ACCOUNT_TYPES).map(([k, l]) => `<option value="${k}" ${a.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="field">Currency<select name="currency">${CUR_CODES.map((c) => `<option ${a.currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
       <div class="field full"><span>Owner</span><div class="seg full">${PERSON_IDS.map((p) => `<button type="button" data-o="${p}" class="${owner === p ? 'on' : ''}">${esc(pname(p))}</button>`).join('')}</div></div>
-      <label class="field">Starting balance<input type="text" name="opening" inputmode="decimal" value="${a.opening ? fmtInput(a.opening, a.currency) : ''}" placeholder="0"><span class="hint">Negative for credit card debt</span></label>
+      <label class="field">Starting balance<input type="text" name="opening" inputmode="decimal" data-money value="${a.opening ? fmtInput(a.opening, a.currency) : ''}" placeholder="e.g. 12,5jt"><span class="hint">Negative for credit card debt</span></label>
       <label class="field">Balance on date<input type="date" name="openingDate" value="${a.openingDate || ''}"><span class="hint">Only transactions from this date on are counted</span></label>
       ${isNew ? '' : `<label class="check full"><input type="checkbox" name="archived" ${a.archived ? 'checked' : ''}> Archived (hidden from lists)</label>`}
     </div></form>
@@ -678,7 +673,7 @@ function openReconcile(a) {
   const m = Modal.open(`${Modal.head(`Reconcile · ${esc(a.name)}`, 'Make the tracker match your real balance')}
     <form class="modal-body" id="rec-form">
       <p style="margin-top:0">Tracker balance today: <b>${fmt(cur, a.currency)}</b></p>
-      <label class="field">Actual balance in your bank / app (${a.currency})<input type="text" name="actual" inputmode="decimal" autofocus placeholder="${fmtInput(cur, a.currency)}"></label>
+      <label class="field">Actual balance in your bank / app (${a.currency})<input type="text" name="actual" inputmode="decimal" data-money="${a.currency}" autofocus placeholder="${fmtInput(cur, a.currency)}"></label>
       <p class="hint">We'll add a "Balance adjustment" for the difference. It doesn't count as spending or income in reports.</p>
     </form>
     <div class="modal-foot"><span class="spacer"></span><button class="btn" data-close>Cancel</button><button class="btn primary" data-save>${icon('check')} Adjust</button></div>`);

@@ -140,8 +140,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 label.field { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
 label.field > input, label.field > select, label.field > textarea { width: 100%; font-weight: 400; font-size: 14px; }
 .hint { font-size: 12px; color: var(--muted); font-weight: 400; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+.form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 14px; }
+.form-grid > * { min-width: 0; }
 .form-grid .full { grid-column: 1 / -1; }
+.money-hint:empty { display: none; }
 .check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-weight: 500; }
 .check input { width: 16px; height: 16px; accent-color: var(--primary); }
 
@@ -344,7 +346,7 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
   .filters .month-pick #f-month, .filters .month-pick #f-year { flex: 1; width: auto; }
   .search input { width: 100%; }
   .search { flex: 1 1 100%; }
-  .form-grid { grid-template-columns: 1fr; }
+  .form-grid { grid-template-columns: minmax(0, 1fr); }
   .kv { grid-template-columns: 1fr; }
   .modal-back { padding: 0; align-items: stretch; }
   .modal { border-radius: 0; min-height: 100%; max-width: none; }
