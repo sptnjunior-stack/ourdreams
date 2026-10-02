@@ -15740,6 +15740,31 @@
    "deleted": true,
    "updatedAt": "2026-10-02T10:23:38.580Z",
    "updatedBy": "junior"
+  },
+  {
+   "id": "t_muqz7fxzgqyhnu",
+   "type": "expense",
+   "date": "2026-10-02",
+   "amount": 19000,
+   "currency": "IDR",
+   "rate": 1,
+   "description": "Tous Les Jours",
+   "categoryId": "c_mumpkffm7c4i1g",
+   "person": "junior",
+   "accountId": "a_mupl36tz4lxxbh",
+   "toAccountId": "",
+   "notes": "",
+   "goalId": "",
+   "fee": 0,
+   "flagged": false,
+   "flagNote": "",
+   "flaggedBy": "",
+   "flaggedAt": "",
+   "installment": null,
+   "toAmount": null,
+   "updatedAt": "2026-10-02T13:05:58.091Z",
+   "updatedBy": "junior",
+   "createdBy": "junior"
   }
  ],
  "budgets": [
