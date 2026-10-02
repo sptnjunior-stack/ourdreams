@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "settings": {
-  "updatedAt": "2026-09-30T14:46:24.577Z",
+  "updatedAt": "2026-10-02T10:24:37.861Z",
   "persons": {
    "junior": {
     "name": "Junior",
@@ -19,11 +19,11 @@
   "baseCurrency": "IDR",
   "rates": {
    "IDR": 1,
-   "JPY": 113.96,
-   "USD": 17891,
-   "SGD": 14007.99
+   "JPY": 113.6,
+   "USD": 17946,
+   "SGD": 14021.41
   },
-  "ratesDate": "2026-09-30"
+  "ratesDate": "2026-10-01"
  },
  "categories": [
   {
