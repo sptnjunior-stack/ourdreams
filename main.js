@@ -114,6 +114,7 @@ const App = {
       $('#page').innerHTML = `<div class="banner bad">${icon('alert')}<div class="grow">Something went wrong drawing this page: ${esc(e.message)}</div></div>`;
     }
     $('#fab').classList.toggle('hidden', ui.page === 'settings');
+    if (this._refocus) { focusSel = this._refocus; this._refocus = null; caret = null; }
     if (focusSel) {
       const el = $(focusSel);
       if (el) { el.focus({ preventScroll: true }); try { if (caret !== null && el.setSelectionRange && el.type !== 'number') el.setSelectionRange(caret, caret); else if (el.select && el.dataset.bud) el.select(); } catch (e) { /* ignore */ } }
@@ -336,6 +337,12 @@ const App = {
       case 'edit-acc': openAccountForm(store.get('accounts', id)); break;
       case 'reconcile': openReconcile(store.get('accounts', id)); break;
       case 'pay-bill': openPayBill(store.get('accounts', id)); break;
+      case 'set-debt-type': {
+        const ids = String(id || '').split(',').filter(Boolean);
+        store.batch(() => ids.forEach((x) => { const a = store.get('accounts', x); if (a && !isDebtAcc(a)) store.upsert('accounts', { ...a, type: suggestedDebtType(a), opening: -Math.abs(Number(a.opening) || 0) }); }));
+        toast(ids.length === 1 ? 'Updated. Add its limit, statement and due day with the pencil icon.' : `Updated ${ids.length} accounts. Add limits, statement and due days with the pencil icons.`);
+        break;
+      }
       case 'statement': openStatement(store.get('accounts', id)); break;
       case 'set-me': cfg.me = v; saveCfg(); this.render(); toast(`This device is now ${pname(v)}'s.`); break;
       case 'set-theme': cfg.theme = v; saveCfg(); applyTheme(); this.render(); break;
@@ -471,6 +478,7 @@ function openTxForm(existing, preset = {}) {
           </div>
           <div class="fee-sum" id="inst-sum"></div>
         </div>
+        <div class="field full inst-hint hidden"><div class="banner info" style="margin:0">${icon('info')}<div class="grow small"><span id="inst-hint-text"></span></div><button type="button" class="btn sm" data-fix-debt>Set as card</button></div></div>
         <label class="field to-amt-row">Amount received<input type="text" name="toAmount" inputmode="decimal" value="${t.toAmount != null && t.toAmount !== '' ? fmtInput(t.toAmount, 'USD') : ''}" placeholder="only if currencies differ"></label>
         <label class="field full">Notes<textarea name="notes" rows="2" placeholder="Optional">${esc(t.notes)}</textarea></label>
         <div class="field full flag-field">
@@ -551,6 +559,9 @@ function openTxForm(existing, preset = {}) {
     // installments: only for spending paid with a credit card / paylater
     const instOk = type === 'expense' && isDebtAcc(fromAcc);
     show('.inst-row', instOk);
+    const hintOn = type === 'expense' && looksLikeDebt(fromAcc);
+    show('.inst-hint', hintOn);
+    if (hintOn) $('#inst-hint-text', m).innerHTML = `Paying in installments? <b>${esc(fromAcc.name)}</b> is set up as ${esc(ACCOUNT_TYPES[fromAcc.type] || fromAcc.type)}. Set it as a ${suggestedDebtType(fromAcc) === 'paylater' ? 'paylater' : 'credit card'} to see the "Pay in" options.`;
     if (!instOk) months = 1;
     m.querySelectorAll('[data-inst]').forEach((b) => b.classList.toggle('on', +b.dataset.inst === months || (months > 1 && ![3, 6, 12, 24].includes(months) && false)));
     if (document.activeElement !== F('instMonths')) F('instMonths').value = months > 1 && ![3, 6, 12, 24].includes(months) ? months : '';
@@ -580,6 +591,12 @@ function openTxForm(existing, preset = {}) {
   });
   m.querySelectorAll('[data-split]').forEach((b) => b.onclick = () => { ratio = +b.dataset.split; updateShares(); });
   m.querySelectorAll('[data-inst]').forEach((b) => b.onclick = () => { months = +b.dataset.inst; F('instMonths').value = ''; refresh(); });
+  m.querySelector('[data-fix-debt]').onclick = () => {
+    const a = store.get('accounts', F('accountId').value); if (!a) return;
+    store.upsert('accounts', { ...a, type: suggestedDebtType(a), opening: -Math.abs(Number(a.opening) || 0) });
+    toast(`${a.name} is now a ${suggestedDebtType(a) === 'paylater' ? 'paylater' : 'credit card'} account.`);
+    refresh();
+  };
   F('instMonths').addEventListener('input', () => { const n = Math.round(Number(F('instMonths').value)); if (n >= 2 && n <= 60) { months = n; refresh(); } });
   F('instInterest').addEventListener('input', refresh);
   if (instMonths(t) && instInterest(t)) F('instInterest').value = fmtInput(instInterest(t), t.currency);

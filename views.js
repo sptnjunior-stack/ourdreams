@@ -127,6 +127,50 @@ function txCatCell(t) {
   return catChip(t.categoryId);
 }
 
+/* Drag-to-reorder rows by their ≡ handle (mouse, touch and pen). Rows carry data-sort-id
+ * (and optionally data-sort-group: rows only move within their own group). Arrow keys work too. */
+function enableRowSort(root, onDone) {
+  if (!root) return;
+  const finish = (tbody, group) => onDone([...tbody.querySelectorAll('[data-sort-id]')].filter((x) => (x.dataset.sortGroup || '') === group).map((x) => x.dataset.sortId), group);
+  root.querySelectorAll('[data-drag]').forEach((h) => {
+    h.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      const row = h.closest('[data-sort-id]'); const tbody = row.parentElement; const group = row.dataset.sortGroup || '';
+      const sibs = [...tbody.querySelectorAll('[data-sort-id]')].filter((x) => (x.dataset.sortGroup || '') === group);
+      const i = sibs.indexOf(row); const j = e.key === 'ArrowUp' ? i - 1 : i + 1;
+      if (j < 0 || j >= sibs.length) return;
+      if (e.key === 'ArrowUp') tbody.insertBefore(row, sibs[j]); else tbody.insertBefore(row, sibs[j].nextSibling);
+      App._refocus = `[data-sort-id="${row.dataset.sortId}"] [data-drag]`;
+      finish(tbody, group);
+    });
+    h.addEventListener('pointerdown', (e) => {
+      if (e.button !== undefined && e.button !== 0) return;
+      const row = h.closest('[data-sort-id]'); if (!row) return;
+      e.preventDefault();
+      const tbody = row.parentElement; const group = row.dataset.sortGroup || '';
+      const before = [...tbody.querySelectorAll('[data-sort-id]')].map((x) => x.dataset.sortId).join();
+      row.classList.add('dragging'); document.body.classList.add('is-sorting');
+      try { h.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      const move = (ev) => {
+        if (ev.clientY < 70) window.scrollBy(0, -14); else if (ev.clientY > window.innerHeight - 70) window.scrollBy(0, 14);
+        const el = document.elementFromPoint(ev.clientX, ev.clientY);
+        const over = el && el.closest('[data-sort-id]');
+        if (!over || over === row || over.parentElement !== tbody || (over.dataset.sortGroup || '') !== group) return;
+        const r = over.getBoundingClientRect();
+        if (ev.clientY < r.top + r.height / 2) tbody.insertBefore(row, over); else tbody.insertBefore(row, over.nextSibling);
+      };
+      const up = () => {
+        h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
+        row.classList.remove('dragging'); document.body.classList.remove('is-sorting');
+        if ([...tbody.querySelectorAll('[data-sort-id]')].map((x) => x.dataset.sortId).join() !== before) finish(tbody, group);
+      };
+      h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+    });
+  });
+}
+const dragHandle = (label) => `<button type="button" class="drag-handle" data-drag aria-label="Drag to reorder ${esc(label)}" title="Drag to reorder (or use ↑ ↓ keys)">${icon('grip')}</button>`;
+
 const Views = {};
 
 /* ================= DASHBOARD ================= */
@@ -594,8 +638,8 @@ Views.categories = () => {
     const groups = type === 'income' ? [['Income', cats]] : GROUPS.map((g) => [g, cats.filter((c) => c.group === g)]);
     const total = sum(cats, (c) => (stats[c.id] || {}).v || 0);
     return `<div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th class="r">Txns</th><th class="r">Total</th><th class="r hide-sm">Share</th>${type === 'expense' ? '<th class="r hide-sm">Budget / mo</th>' : ''}<th></th></tr></thead><tbody>
-      ${groups.filter(([, l]) => l.length).map(([g, l]) => `${type === 'expense' ? `<tr class="group"><td colspan="6">${g}</td></tr>` : ''}${l.map((c) => { const s = stats[c.id] || { n: 0, v: 0 }; return `<tr>
-        <td><span class="dot" style="background:${c.color}"></span> <b>${esc(c.name)}</b>${c.type === 'expense' ? ` <button class="badge ${isFixed(c) ? '' : 'good'}" data-action="toggle-fixed" data-id="${c.id}" title="Click to switch between Fixed (monthly bill) and Flexible (daily allowance)" style="border:0;cursor:pointer">${isFixed(c) ? 'fixed' : 'flexible'}</button>` : ''}</td>
+      ${groups.filter(([, l]) => l.length).map(([g, l]) => `${type === 'expense' ? `<tr class="group"><td colspan="6">${g}</td></tr>` : ''}${l.map((c) => { const s = stats[c.id] || { n: 0, v: 0 }; return `<tr data-sort-id="${c.id}" data-sort-group="${c.type}:${c.group}">
+        <td class="name-cell">${dragHandle(c.name)}<span class="dot" style="background:${c.color}"></span> <b>${esc(c.name)}</b>${c.type === 'expense' ? ` <button class="badge ${isFixed(c) ? '' : 'good'}" data-action="toggle-fixed" data-id="${c.id}" title="Click to switch between Fixed (monthly bill) and Flexible (daily allowance)" style="border:0;cursor:pointer">${isFixed(c) ? 'fixed' : 'flexible'}</button>` : ''}</td>
         <td class="r num">${s.n}</td><td class="r num">${money(s.v)}</td><td class="r num hide-sm muted">${total ? pct(s.v / total) : '–'}</td>
         ${type === 'expense' ? `<td class="r num hide-sm muted">${money(budgetCell(ym, c.id, 'all'))}</td>` : ''}
         <td class="r nowrap"><button class="btn ghost sm icon" data-action="filter-cat" data-id="${c.id}" title="Show on dashboard">${icon('filter')}</button><button class="btn ghost sm icon" data-action="edit-cat" data-id="${c.id}" title="Edit">${icon('edit')}</button><button class="btn ghost sm icon danger" data-action="del-cat" data-id="${c.id}" title="Delete">${icon('trash')}</button></td></tr>`; }).join('')}`).join('')}
@@ -616,6 +660,10 @@ Views.categories = () => {
     </tbody></table></div></div>` : ''}`;
 };
 Views.categories.after = () => {
+  enableRowSort($('#page'), (ids) => {
+    store.batch(() => ids.forEach((id, i) => { const c = store.get('categories', id); if (c && c.order !== i) store.upsert('categories', { ...c, order: i }); }));
+    toast('Category order saved.');
+  });
   const f = getFilter();
   const S = summarize(filteredLines(f));
   const list = Object.entries(S.byCat).sort((a, b) => b[1] - a[1]).slice(0, 12);
@@ -716,13 +764,14 @@ Views.balance = () => {
     <div class="card kpi"><span class="kpi-label">${f.person === 'all' || f.person === SPLIT ? 'Net balance' : `${esc(pname(f.person))}'s net balance`}</span><span class="kpi-value">${money(total, { compact: true })}</span><span class="kpi-sub">${cd.debt ? `Cash & bank ${money(cd.cash, { compact: true })} · <span class="bad">debt ${money(cd.debt, { compact: true })}</span>` : `${accs.length} accounts`}</span></div>
     ${PERSON_IDS.map((p) => `<div class="card kpi"><span class="kpi-label"><span class="dot" style="background:${pcolor(p)}"></span>${esc(pname(p))}</span><span class="kpi-value">${money(byOwner(p), { compact: true })}</span><span class="kpi-sub">${all.filter((a) => a.owner === p).length} accounts</span></div>`).join('')}
   </div>
+  ${(() => { const sus = accs.filter(looksLikeDebt); return sus.length ? `<div class="banner info section-gap">${icon('info')}<div class="grow small"><b>${sus.map((a) => esc(a.name)).join(', ')}</b> look${sus.length === 1 ? 's' : ''} like a credit card or paylater but ${sus.length === 1 ? `is set up as ${esc(ACCOUNT_TYPES[sus[0].type] || sus[0].type)}` : 'aren\'t set up as cards'}. Set the type to get installment options ("Pay in"), statements and bill reminders.</div><button class="btn sm primary" data-action="set-debt-type" data-id="${sus.map((a) => a.id).join(',')}">Fix ${sus.length === 1 ? 'it' : 'all'}</button></div>` : ''; })()}
   ${cards.length ? `<div class="card section-gap"><div class="card-head"><h3>Cards & paylater</h3><span class="sub">what you owe, limits and bills</span></div>${cards.map(cardRow).join('')}</div>` : ''}
   <div class="grid cols-2-1 section-gap">
     <div class="card">
       <div class="card-head"><h3>Accounts</h3></div>
       ${accs.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Account</th><th class="hide-sm">Owner</th><th class="r">Balance</th><th class="r hide-sm">Change in period</th><th></th></tr></thead><tbody>
-      ${accs.map((a) => { const bal = accountBalance(a, asOf); const ch = bal - accountBalance(a, startRef); return `<tr>
-        <td><b>${esc(a.name)}</b><div class="small muted">${ACCOUNT_TYPES[a.type] || a.type} · ${a.currency}${a.openingDate ? ` · since ${fmtDate(a.openingDate)}` : ''}</div></td>
+      ${accs.map((a) => { const bal = accountBalance(a, asOf); const ch = bal - accountBalance(a, startRef); return `<tr data-sort-id="${a.id}">
+        <td class="name-cell">${dragHandle(a.name)}<b>${esc(a.name)}</b>${looksLikeDebt(a) ? ` <button class="badge warn" data-action="set-debt-type" data-id="${a.id}" style="border:0;cursor:pointer" title="Turn on installments, statements and bill reminders">Is this a ${suggestedDebtType(a) === 'paylater' ? 'paylater' : 'credit card'}?</button>` : ''}<div class="small muted">${ACCOUNT_TYPES[a.type] || a.type} · ${a.currency}${a.openingDate ? ` · since ${fmtDate(a.openingDate)}` : ''}</div></td>
         <td class="hide-sm">${personChip(a.owner)}</td>
         <td class="r num nowrap"><b class="${bal < 0 ? 'bad' : ''}">${fmt(bal, a.currency)}</b>${a.currency !== 'IDR' ? `<span class="orig">≈ ${money(convert(bal, a.currency, 'IDR'))}</span>` : ''}</td>
         <td class="r num hide-sm ${ch < 0 ? 'bad' : ch > 0 ? 'good' : 'muted'}">${fmt(ch, a.currency, { sign: true })}</td>
@@ -744,6 +793,11 @@ Views.balance = () => {
   </div>`;
 };
 Views.balance.after = () => {
+  enableRowSort($('#page'), (ids) => {
+    const rest = store.all('accounts').map((a) => a.id).filter((id) => !ids.includes(id));
+    store.batch(() => [...ids, ...rest].forEach((id, i) => { const a = store.get('accounts', id); if (a && a.order !== i) store.upsert('accounts', { ...a, order: i }); }));
+    toast('Account order saved.');
+  });
   const f = getFilter();
   const accs = accountsForPerson(f.person === SPLIT ? 'all' : f.person);
   if (!accs.length) return;

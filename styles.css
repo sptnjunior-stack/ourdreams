@@ -443,3 +443,12 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .inst-row { gap: 8px; }
 .inst-row > span { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
 .inst-extra { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+
+/* ---------- drag to reorder ---------- */
+.name-cell { white-space: nowrap; }
+.drag-handle { border: 0; background: none; color: var(--muted); padding: 4px 4px; margin: -4px 4px -4px -6px; border-radius: 6px; cursor: grab; touch-action: none; display: inline-flex; vertical-align: middle; opacity: .6; }
+.drag-handle:hover, .drag-handle:focus-visible { opacity: 1; background: var(--surface-2); }
+.drag-handle svg.i { width: 16px; height: 16px; }
+tr.dragging td { background: var(--primary-soft) !important; }
+tr.dragging .drag-handle { cursor: grabbing; opacity: 1; color: var(--primary); }
+body.is-sorting, body.is-sorting * { cursor: grabbing !important; user-select: none !important; -webkit-user-select: none !important; }

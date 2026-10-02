@@ -92,6 +92,7 @@ const ICONS = {
   calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
   user: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
   up: '<path d="m18 15-6-6-6 6"/>',
+  grip: '<line x1="5" x2="19" y1="8" y2="8"/><line x1="5" x2="19" y1="12" y2="12"/><line x1="5" x2="19" y1="16" y2="16"/>',
   flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>',
 };
 function icon(name, cls = '') { return `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`; }
@@ -170,6 +171,11 @@ const GROUP_COLORS = { Needs: '#0ea5e9', Wants: '#f97316', Savings: '#10b981', I
 const ACCOUNT_TYPES = { bank: 'Bank', ewallet: 'E-wallet', cash: 'Cash', credit: 'Credit card', paylater: 'Paylater', savings: 'Savings', investment: 'Investment', other: 'Other' };
 /** Credit cards and paylater: money you owe (balance is negative while you owe). */
 const isDebtAcc = (a) => !!a && (a.type === 'credit' || a.type === 'paylater');
+/** Name sounds like a credit card / paylater but the account type says otherwise (e.g. imported as "Bank"). */
+const DEBT_NAME = /(credit|kartu kredit|\bcc\b|\bkk\b|visa|mastercard|paylater|pay later|kredivo|akulaku|atome|indodana|home credit|spaylater|gopaylater|traveloka paylater|cicil)/i;
+const PAYLATER_NAME = /(paylater|pay later|kredivo|akulaku|atome|indodana|home credit|spaylater|gopaylater)/i;
+const looksLikeDebt = (a) => !!a && !isDebtAcc(a) && DEBT_NAME.test(a.name || '');
+const suggestedDebtType = (a) => (PAYLATER_NAME.test(a.name || '') ? 'paylater' : 'credit');
 
 const DEFAULT_CATEGORIES = [
   ['Groceries', 'expense', 'Needs', '#16a34a'],
@@ -355,7 +361,11 @@ const store = {
     if (!lsSet(LS.data, this.data)) toast('Could not save to this browser (storage full or blocked).', 'bad');
   },
   replace(data) { this.data = normalizeData(data); migrateData(this.data); this.version++; this.persist(); },
-  all(c) { return this.data[c].filter((r) => !r.deleted); },
+  all(c) {
+    const r = this.data[c].filter((x) => !x.deleted);
+    // accounts follow the order you set on the Balance page (drag the ≡ handle)
+    return c === 'accounts' ? r.sort((a, b) => (a.order ?? 1e6) - (b.order ?? 1e6)) : r;
+  },
   get(c, id) { return id ? this.data[c].find((r) => r.id === id && !r.deleted) : undefined; },
   upsert(c, rec) {
     rec = { ...rec, updatedAt: stamp(), updatedBy: me() };
