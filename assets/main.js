@@ -241,7 +241,30 @@ const App = {
       case 'tx-type': ui.tx.type = v; ui.tx.limit = 100; saveUI(); this.render(); break;
       case 'tx-more': ui.tx.limit += 200; this.render(); break;
       case 'tx-sort-reset': ui.tx.sort = 'date'; ui.tx.dir = -1; saveUI(); this.render(); break;
-      case 'tx-reset': Object.assign(ui.tx, { q: '', type: 'all', account: 'all', sort: 'date', dir: -1, limit: 100 }); this.sel.clear(); saveUI(); this.render(); break;
+      case 'tx-flagged': ui.tx.flagged = !ui.tx.flagged; ui.tx.limit = 100; saveUI(); this.render(); break;
+      case 'review-flags': {
+        const fl = flaggedTx();
+        ui.tx.flagged = true; ui.tx.type = 'all'; ui.tx.account = 'all'; ui.tx.q = '';
+        if (fl.length) { const ds = fl.map((t) => t.date).sort(); ui.filter.preset = 'custom'; ui.filter.from = ds[0]; ui.filter.to = ds[ds.length - 1]; }
+        ui.filter.person = 'all'; ui.filter.cats = [];
+        saveUI(); this.go('log'); break;
+      }
+      case 'flag-tx': {
+        const t = store.get('transactions', id); if (!t) return;
+        if (t.flagged) {
+          const before = { ...t };
+          store.upsert('transactions', { ...t, flagged: false, flagNote: '', flaggedBy: '', flaggedAt: '' });
+          toast('Flag resolved.', '', { label: 'Undo', fn: () => store.upsert('transactions', before) });
+        } else openFlagForm([t.id]);
+        break;
+      }
+      case 'bulk-flag': openFlagForm([...this.sel]); break;
+      case 'bulk-unflag': {
+        const ids = [...this.sel];
+        store.batch(() => ids.forEach((x) => { const t = store.get('transactions', x); if (t && t.flagged) store.upsert('transactions', { ...t, flagged: false, flagNote: '', flaggedBy: '', flaggedAt: '' }); }));
+        toast('Flags cleared.'); break;
+      }
+      case 'tx-reset': Object.assign(ui.tx, { q: '', type: 'all', account: 'all', sort: 'date', dir: -1, limit: 100, flagged: false }); this.sel.clear(); saveUI(); this.render(); break;
       case 'sel': if (el.checked) this.sel.add(id); else this.sel.delete(id); this.render(); break;
       case 'sel-all': {
         const rows = $$('[data-action="sel"]').map((x) => x.dataset.id);
@@ -439,6 +462,13 @@ function openTxForm(existing, preset = {}) {
         <label class="field to-row"><span id="to-label">To account</span><select name="toAccountId">${accOpts(t.toAccountId)}</select></label>
         <label class="field to-amt-row">Amount received<input type="text" name="toAmount" inputmode="decimal" value="${t.toAmount != null && t.toAmount !== '' ? fmtInput(t.toAmount, 'USD') : ''}" placeholder="only if currencies differ"></label>
         <label class="field full">Notes<textarea name="notes" rows="2" placeholder="Optional">${esc(t.notes)}</textarea></label>
+        <div class="field full flag-field">
+          <label class="check"><input type="checkbox" name="flagged" ${t.flagged ? 'checked' : ''}> ${icon('flag')} Flag for follow-up</label>
+          <div class="flag-extra ${t.flagged ? '' : 'hidden'}">
+            <div class="chip-row">${FLAG_REASONS.map((r) => `<button type="button" class="pick" data-flagreason="${esc(r)}">${esc(r)}</button>`).join('')}</div>
+            <input type="text" name="flagNote" value="${esc(t.flagNote || '')}" placeholder="What needs checking? (optional)" aria-label="Flag note">
+          </div>
+        </div>
       </div>
     </form>
     <div class="modal-foot">
@@ -508,6 +538,8 @@ function openTxForm(existing, preset = {}) {
     if (person === SPLIT) updateShares(document.activeElement === F('shareJunior'));
   };
   fillCats(); refresh();
+  F('flagged').addEventListener('change', () => { show('.flag-extra', F('flagged').checked); });
+  m.querySelectorAll('[data-flagreason]').forEach((b) => b.onclick = () => { F('flagNote').value = b.dataset.flagreason; });
   m.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => {
     type = b.dataset.t; m.querySelectorAll('[data-t]').forEach((x) => x.classList.toggle('on', x === b));
     if (!catTouched) F('categoryId').value = '';
@@ -565,6 +597,10 @@ function openTxForm(existing, preset = {}) {
       person: type === 'transfer' || type === 'adjustment' ? (person === SPLIT ? me() : person) : person,
       categoryId: type === 'transfer' || type === 'adjustment' ? '' : F('categoryId').value, accountId: F('accountId').value,
       toAccountId: toVisible ? F('toAccountId').value : '', notes: F('notes').value.trim(),
+      flagged: F('flagged').checked,
+      flagNote: F('flagged').checked ? F('flagNote').value.trim() : '',
+      flaggedBy: F('flagged').checked ? (t.flagged ? t.flaggedBy || me() : me()) : '',
+      flaggedAt: F('flagged').checked ? (t.flagged ? t.flaggedAt || stamp() : stamp()) : '',
       goalId: m.querySelector('.goal-row').classList.contains('hidden') ? '' : F('goalId').value,
       fee,
     };
@@ -599,6 +635,29 @@ function openTxForm(existing, preset = {}) {
   };
   const dup = m.querySelector('[data-dup]');
   if (dup) dup.onclick = () => { const rec = collect(); if (!rec) return; Modal.close(); const { id, createdAt, createdBy, updatedAt, updatedBy, importId, ...rest } = rec; void id; void createdAt; void createdBy; void updatedAt; void updatedBy; void importId; openTxForm(null, { ...rest, date: todayStr() }); };
+}
+
+/* ---------------- flag form (quick) ---------------- */
+function openFlagForm(ids) {
+  ids = ids.filter((x) => store.get('transactions', x));
+  if (!ids.length) return;
+  const one = ids.length === 1 ? store.get('transactions', ids[0]) : null;
+  const m = Modal.open(`${Modal.head(`${icon('flag')} Flag for follow-up`, one ? `${txTitle(one)} · ${money(txBase(one))} · ${fmtDate(one.date)}` : `${ids.length} transactions`)}
+    <form class="modal-body" id="flag-form">
+      <div class="chip-row" style="margin-bottom:10px">${FLAG_REASONS.map((r) => `<button type="button" class="pick" data-flagreason="${esc(r)}">${esc(r)}</button>`).join('')}</div>
+      <label class="field">What needs checking? (optional)<input type="text" name="note" autofocus placeholder="e.g. Ask Sabit if this was the Shopee refund"></label>
+      <p class="hint">Flags don't change any totals. Find them later with the <b>Flagged</b> button on the Log page, or from the reminder on the Dashboard.</p>
+    </form>
+    <div class="modal-foot"><span class="spacer"></span><button class="btn" data-close>Cancel</button><button class="btn primary" data-save>${icon('flag')} Flag</button></div>`);
+  const form = $('#flag-form', m);
+  m.querySelectorAll('[data-flagreason]').forEach((b) => b.onclick = () => { form.elements.note.value = b.dataset.flagreason; m.querySelectorAll('[data-flagreason]').forEach((x) => x.classList.toggle('on', x === b)); });
+  const save = () => {
+    const note = form.elements.note.value.trim(); const at = stamp();
+    store.batch(() => ids.forEach((x) => { const t = store.get('transactions', x); if (t) store.upsert('transactions', { ...t, flagged: true, flagNote: note, flaggedBy: me(), flaggedAt: at }); }));
+    Modal.close(); toast(ids.length === 1 ? 'Flagged for follow-up.' : `Flagged ${ids.length} transactions.`);
+  };
+  form.onsubmit = (e) => { e.preventDefault(); save(); };
+  m.querySelector('[data-save]').onclick = save;
 }
 
 /* ---------------- category form ---------------- */
@@ -837,10 +896,10 @@ function exportCSV() {
   const f = getFilter();
   const txs = filteredTx(f).sort((a, b) => a.date.localeCompare(b.date));
   const accs = store.accMap();
-  const rows = [['Date', 'Type', 'Description', 'Category', 'Group', 'Person', 'Junior share %', 'Account', 'To account', 'Amount', 'Currency', 'Rate', 'Amount (IDR)', 'Admin fee', 'Notes']];
+  const rows = [['Date', 'Type', 'Description', 'Category', 'Group', 'Person', 'Junior share %', 'Account', 'To account', 'Amount', 'Currency', 'Rate', 'Amount (IDR)', 'Admin fee', 'Notes', 'Flagged', 'Flag note']];
   for (const t of txs) {
     const c = catOf(t);
-    rows.push([t.date, t.type, t.description || '', c ? c.name : '', c ? c.group : '', isSplit(t) ? 'Split' : pname(t.person), Math.round(shareOf(t, 'junior') * 100), (accs.get(t.accountId) || {}).name || '', (accs.get(t.toAccountId) || {}).name || '', t.amount, t.currency || 'IDR', t.rate || 1, txBase(t), Number(t.fee) || 0, t.notes || '']);
+    rows.push([t.date, t.type, t.description || '', c ? c.name : '', c ? c.group : '', isSplit(t) ? 'Split' : pname(t.person), Math.round(shareOf(t, 'junior') * 100), (accs.get(t.accountId) || {}).name || '', (accs.get(t.toAccountId) || {}).name || '', t.amount, t.currency || 'IDR', t.rate || 1, txBase(t), Number(t.fee) || 0, t.notes || '', t.flagged ? 'yes' : '', t.flagNote || '']);
   }
   downloadFile(`transactions-${f.from}-to-${f.to}.csv`, '﻿' + toCSV(rows), 'text/csv');
   toast(`Exported ${txs.length} transactions (current filters).`);

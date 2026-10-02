@@ -231,6 +231,7 @@ Views.dashboard = () => {
     : `<div class="over-summary">${A.summary.map((s) => `<span class="os-item ${s.n ? 'is-over' : 'is-ok'}"><span class="dot" style="background:${pcolor(s.p)}"></span><b>${esc(pname(s.p))}</b> ${s.n ? `over on ${s.n} of ${s.counted} ${unitWord}${s.counted === 1 ? '' : 's'} <span class="os-amt">+${money(s.over, { compact: true })}</span>` : `within allowance on all ${s.counted} ${unitWord}${s.counted === 1 ? '' : 's'}`}</span>`).join('')}</div>`;
 
   return `
+  ${(() => { const fl = flaggedTx(); return fl.length ? `<div class="banner flag-banner">${icon('flag')}<div class="grow small"><b>${fl.length} transaction${fl.length === 1 ? '' : 's'} flagged for follow-up</b> · ${fl.slice(0, 3).map((t) => `${txTitle(t)}${t.flagNote ? ` (${esc(t.flagNote)})` : ''}`).join(', ')}${fl.length > 3 ? '…' : ''}</div><button class="btn sm" data-action="review-flags">Review</button></div>` : ''; })()}
   <div class="grid kpis">
     ${kpi('Income', money(S.income, { compact: true }), deltaHTML(S.income, P.income, true))}
     ${kpi('Spending', money(S.spend, { compact: true }), deltaHTML(S.spend, P.spend, false))}
@@ -280,7 +281,7 @@ Views.dashboard = () => {
     </div>
     <div class="card">
       <div class="card-head"><h3>Recent</h3><div class="right"><a class="small" href="#log">All →</a></div></div>
-      <div class="list">${recent.map((t) => `<div class="list-row" data-action="edit-tx" data-id="${t.id}" style="cursor:pointer"><span class="dot" style="background:${(catOf(t) || {}).color || '#94a3b8'}"></span><div class="grow"><div class="title">${txTitle(t)}</div><div class="meta">${fmtDate(t.date, false)} · ${isSplit(t) ? `Split ${splitLabel(t)}` : esc(pname(t.person))}</div></div><div class="amount">${amountCell(t)}</div></div>`).join('') || '<div class="muted small">No transactions.</div>'}</div>
+      <div class="list">${recent.map((t) => `<div class="list-row" data-action="edit-tx" data-id="${t.id}" style="cursor:pointer"><span class="dot" style="background:${(catOf(t) || {}).color || '#94a3b8'}"></span><div class="grow"><div class="title">${t.flagged ? `<span class="flag-ic" title="Flagged">${icon('flag')}</span>` : ''}${txTitle(t)}</div><div class="meta">${fmtDate(t.date, false)} · ${isSplit(t) ? `Split ${splitLabel(t)}` : esc(pname(t.person))}</div></div><div class="amount">${amountCell(t)}</div></div>`).join('') || '<div class="muted small">No transactions.</div>'}</div>
     </div>
   </div>
 
@@ -385,16 +386,18 @@ Views.dashboard.after = () => {
 
 /* ================= SPENDING (transactions) ================= */
 const TX_SORT_LABELS = { date: 'date', description: 'description', category: 'category', person: 'person', amount: 'amount' };
-const TX_DEFAULT = { q: '', type: 'all', account: 'all', sort: 'date', dir: -1 };
+const TX_DEFAULT = { q: '', type: 'all', account: 'all', sort: 'date', dir: -1, flagged: false };
 const txViewChanged = () => Object.keys(TX_DEFAULT).some((k) => (ui.tx[k] ?? TX_DEFAULT[k]) !== TX_DEFAULT[k]);
 Views.spending = () => {
   const f = getFilter();
   const q = ui.tx.q.trim().toLowerCase();
   let txs = filteredTx(f).filter((t) => (ui.tx.type === 'all' || t.type === ui.tx.type || (ui.tx.type === 'transfer' && t.type === 'adjustment'))
     && (ui.tx.account === 'all' || t.accountId === ui.tx.account || t.toAccountId === ui.tx.account));
+  const flaggedHere = txs.filter((t) => t.flagged).length;
+  if (ui.tx.flagged) txs = txs.filter((t) => t.flagged);
   if (q) {
     txs = txs.filter((t) => {
-      const hay = `${t.description || ''} ${t.notes || ''} ${(catOf(t) || {}).name || ''} ${isSplit(t) ? 'split shared' : pname(t.person)} ${(store.accMap().get(t.accountId) || {}).name || ''} ${t.amount}`.toLowerCase();
+      const hay = `${t.description || ''} ${t.notes || ''} ${(catOf(t) || {}).name || ''} ${isSplit(t) ? 'split shared' : pname(t.person)} ${(store.accMap().get(t.accountId) || {}).name || ''} ${t.amount} ${t.flagged ? `flagged ${t.flagNote || ''}` : ''}`.toLowerCase();
       return q.split(/\s+/).every((w) => hay.includes(w));
     });
   }
@@ -422,6 +425,7 @@ Views.spending = () => {
     ${txViewChanged() ? `<button class="btn ghost sm" data-action="tx-reset" title="Back to newest first, all types, all accounts, no search">${icon('x')} Reset view</button>` : ''}
     <span class="grow"></span>
     <button class="btn" data-action="import">${icon('upload')}<span class="hide-sm">Import</span></button>
+    <button class="btn ${ui.tx.flagged ? 'flag-on' : ''}" data-action="tx-flagged" title="Show only flagged transactions">${icon('flag')} Flagged${flaggedHere ? ` <span class="count">${flaggedHere}</span>` : ''}</button>
     <button class="btn" data-action="export-csv">${icon('download')}<span class="hide-sm">Export</span></button>
     <button class="btn primary" data-action="add-tx">${icon('plus')} Add</button>
   </div>
@@ -429,6 +433,8 @@ Views.spending = () => {
     <select id="bulk-cat"><option value="">Set category…</option>${store.categories().map((c) => `<option value="${c.id}">${esc(c.name)} (${c.type === 'income' ? 'income' : c.group})</option>`).join('')}</select>
     <select id="bulk-person"><option value="">Set person…</option>${PEOPLE.map((p) => `<option value="${p}">${esc(pname(p))}</option>`).join('')}<option value="split">Split 50:50</option></select>
     <select id="bulk-acc"><option value="">Set account…</option><option value="__none__">— none —</option>${accs.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select>
+    <button class="btn sm" data-action="bulk-flag">${icon('flag')} Flag</button>
+    <button class="btn sm" data-action="bulk-unflag">Clear flag</button>
     <button class="btn sm danger" data-action="bulk-delete">${icon('trash')} Delete</button>
     <button class="btn sm ghost" data-action="bulk-clear">Clear</button></div>` : ''}
   <div class="card">
@@ -441,15 +447,16 @@ Views.spending = () => {
       <tbody>${shown.map((t) => `<tr class="${sel.has(t.id) ? 'sel' : ''}">
         <td class="c cb"><input type="checkbox" class="check" data-action="sel" data-id="${t.id}" ${sel.has(t.id) ? 'checked' : ''} aria-label="Select"></td>
         <td class="nowrap d-date">${fmtDate(t.date)}</td>
-        <td class="d-desc" data-action="edit-tx" data-id="${t.id}" style="cursor:pointer"><div class="desc">${txTitle(t)}</div>${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ''}</td>
+        <td class="d-desc" data-action="edit-tx" data-id="${t.id}" style="cursor:pointer"><div class="desc">${txTitle(t)}</div>${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ''}${flagLine(t)}</td>
         <td class="d-cat">${txCatCell(t)}</td>
         <td class="d-person">${txPersonChip(t)}</td>
         <td class="d-acc small muted">${esc((store.accMap().get(t.accountId) || {}).name || '')}</td>
         <td class="d-meta small muted">${fmtDate(t.date, false)} ${txCatCell(t)} ${txPersonChip(t)}</td>
         <td class="r nowrap d-amt">${amountCell(t)}</td>
-        <td class="r d-act"><button class="btn ghost sm icon" data-action="edit-tx" data-id="${t.id}" aria-label="Edit">${icon('edit')}</button></td>
+        <td class="r d-act nowrap"><button class="btn ghost sm icon flag-btn ${t.flagged ? 'on' : ''}" data-action="flag-tx" data-id="${t.id}" aria-label="${t.flagged ? 'Resolve flag' : 'Flag for follow-up'}" title="${t.flagged ? 'Resolve flag' : 'Flag for follow-up'}">${icon('flag')}</button><button class="btn ghost sm icon" data-action="edit-tx" data-id="${t.id}" aria-label="Edit">${icon('edit')}</button></td>
       </tr>`).join('')}</tbody></table></div>
       ${txs.length > shown.length ? `<div style="text-align:center;margin-top:12px"><button class="btn" data-action="tx-more">Show more (${txs.length - shown.length} left)</button></div>` : ''}`
+    : ui.tx.flagged ? emptyState('Nothing flagged here', 'No flagged transactions match these filters. Flag a row with the flag icon to follow up on it later.')
     : emptyState('No transactions here', 'Try a wider date range or clear filters — or add one.', `<button class="btn primary" data-action="add-tx">${icon('plus')} Add transaction</button>`)}
   </div>`;
 };

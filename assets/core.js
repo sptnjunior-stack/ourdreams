@@ -92,6 +92,7 @@ const ICONS = {
   calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
   user: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
   up: '<path d="m18 15-6-6-6 6"/>',
+  flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>',
 };
 function icon(name, cls = '') { return `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`; }
 
@@ -408,6 +409,13 @@ const pname = (id) => (persons()[id] || {}).name || id || '–';
 const pcolor = (id) => (persons()[id] || {}).color || '#94a3b8';
 function personChip(id) { return `<span class="chip" style="background:${pcolor(id)}22;color:${pcolor(id)}">${esc(pname(id))}</span>`; }
 function splitLabel(t) { const r = Math.round(shareOf(t, 'junior') * 100); return `${r}:${100 - r}`; }
+/* Flags: mark a transaction for follow-up (t.flagged, t.flagNote, t.flaggedBy, t.flaggedAt). Flags never change any totals. */
+const FLAG_REASONS = ['Check amount', 'Wrong category', 'Missing receipt', 'Ask partner', 'Possible duplicate', 'Adjust later'];
+const flaggedTx = () => store.activeTx().filter((t) => t.flagged);
+function flagLine(t) {
+  if (!t.flagged) return '';
+  return `<div class="flag-note">${icon('flag')}<span>${t.flagNote ? esc(t.flagNote) : 'Flagged for follow-up'} · ${esc(pname(t.flaggedBy))}${t.flaggedAt ? `, ${fmtDate(t.flaggedAt.slice(0, 10), false)}` : ''}</span></div>`;
+}
 function txPersonChip(t) {
   if (!isSplit(t)) return personChip(t.person);
   return `<span class="chip" title="${esc(pname('junior'))} ${Math.round(shareOf(t, 'junior') * 100)}% · ${esc(pname('sabit'))} ${Math.round(shareOf(t, 'sabit') * 100)}%"><span class="dot" style="background:${pcolor('junior')}"></span><span class="dot" style="background:${pcolor('sabit')};margin-left:-4px"></span>Split ${splitLabel(t)}</span>`;

@@ -410,3 +410,23 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .chip-x { background: none; border: 0; padding: 0; margin-left: 2px; cursor: pointer; color: inherit; display: inline-flex; opacity: .7; }
 .chip-x:hover { opacity: 1; }
 .chip-x svg.i { width: 13px; height: 13px; }
+
+/* ---------- flags ---------- */
+.flag-note { display: flex; align-items: center; gap: 5px; margin-top: 3px; font-size: 12px; color: var(--warn); font-weight: 600; max-width: 360px; }
+.flag-note svg.i { width: 13px; height: 13px; flex: none; }
+.flag-note span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flag-btn { color: var(--muted); opacity: .55; }
+.flag-btn:hover { opacity: 1; }
+.flag-btn.on { color: var(--warn); opacity: 1; }
+.flag-btn.on svg.i { fill: currentColor; }
+.btn.flag-on { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 40%, transparent); color: var(--warn); }
+.btn .count { background: var(--warn); color: #fff; border-radius: 999px; font-size: 11px; padding: 0 6px; line-height: 17px; }
+.flag-banner { align-items: center; }
+.flag-banner svg.i { color: var(--warn); }
+.flag-ic { color: var(--warn); display: inline-flex; vertical-align: -2px; margin-right: 4px; }
+.flag-ic svg.i { width: 13px; height: 13px; fill: currentColor; }
+.flag-field { gap: 8px; }
+.flag-field .check svg.i { width: 15px; height: 15px; color: var(--warn); }
+.flag-extra { display: flex; flex-direction: column; gap: 8px; }
+.flag-extra input { width: 100%; }
+@media (max-width: 860px) { table.t.tx td.d-desc .flag-note { max-width: none; } }
