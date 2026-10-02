@@ -309,6 +309,17 @@ Views.dashboard = () => {
     : `<div class="over-summary">${A.summary.map((s) => `<span class="os-item ${s.n ? 'is-over' : 'is-ok'}"><span class="dot" style="background:${pcolor(s.p)}"></span><b>${esc(pname(s.p))}</b> ${s.n ? `over on ${s.n} of ${s.counted} ${unitWord}${s.counted === 1 ? '' : 's'} <span class="os-amt">+${money(s.over, { compact: true })}</span>` : `within allowance on all ${s.counted} ${unitWord}${s.counted === 1 ? '' : 's'}`}</span>`).join('')}</div>`;
 
   return `
+  ${(() => {
+    if (gh.configured() || !store.activeTx().length) return '';
+    const now = Date.now();
+    if (!cfg.localSince) { cfg.localSince = new Date(now).toISOString(); saveCfg(); }
+    if (cfg.localSnooze && Date.parse(cfg.localSnooze) > now) return '';
+    if (now - Date.parse(cfg.localSince) < 86400e3) return '';
+    const lb = cfg.lastBackup ? Date.parse(cfg.lastBackup) : 0;
+    const backupOld = now - lb > 7 * 86400e3;
+    return `<div class="banner bad">${icon('cloudOff')}<div class="grow small"><b>This device isn't connected to GitHub.</b> Everything entered here is saved only in this browser, so ${esc(pname(me() === 'junior' ? 'sabit' : 'junior'))} can't see it, and clearing the browser would erase it.${backupOld ? ` ${lb ? `Last backup: ${relTime(cfg.lastBackup)}.` : 'No backup yet.'}` : ''}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><a class="btn sm primary" href="#settings">Connect</a>${backupOld ? `<button class="btn sm" data-action="export-json">${icon('download')} Backup</button>` : ''}<button class="btn sm ghost" data-action="local-snooze">Tomorrow</button></div></div>`;
+  })()}
   ${cardReminders().map(({ a, st, days }) => `<div class="banner ${days < 0 ? 'bad' : ''} card-banner">${icon('wallet')}<div class="grow small"><b>${esc(a.name)} bill ${fmt(st.due, a.currency)}</b> ${days < 0 ? `was due ${fmtDate(st.dueDate)} (${-days} day${days === -1 ? '' : 's'} ago)` : days === 0 ? 'is due today' : `is due ${fmtDate(st.dueDate)} (in ${days} day${days === 1 ? '' : 's'})`} · statement ${fmtDate(st.from, false)} – ${fmtDate(st.close, false)}</div><button class="btn sm" data-action="statement" data-id="${a.id}">Statement</button><button class="btn sm primary" data-action="pay-bill" data-id="${a.id}">Pay bill</button></div>`).join('')}
   ${(() => { const fl = flaggedTx(); return fl.length ? `<div class="banner flag-banner">${icon('flag')}<div class="grow small"><b>${fl.length} transaction${fl.length === 1 ? '' : 's'} flagged for follow-up</b> · ${fl.slice(0, 3).map((t) => `${txTitle(t)}${t.flagNote ? ` (${esc(t.flagNote)})` : ''}`).join(', ')}${fl.length > 3 ? '…' : ''}</div><button class="btn sm" data-action="review-flags">Review</button></div>` : ''; })()}
   <div class="grid kpis">
@@ -635,6 +646,11 @@ Views.budget.after = () => {
       if (!isFinite(v) || v < 0) { toast('Please enter a valid amount, e.g. 1500000, 1.500.000 or 1,5jt', 'bad'); inp.value = ''; return; }
       const month = ui.budgetMonth;
       // let focus move to the next cell (Tab) before re-rendering, so it is kept
+      if (v >= BIG_AMOUNT) {
+        confirmBox('Is this budget right?', `<p style="margin-top:0">You typed <b style="font-size:18px">${money(v)}</b> for one category in one month.</p><p class="hint">Big amounts are often an extra 000 by mistake.</p>`, { okLabel: 'Yes, keep it', danger: false })
+          .then((ok) => { if (ok) App.setBudget(month, catId, pid, Math.round(v)); else App.render(); });
+        return;
+      }
       setTimeout(() => App.setBudget(month, catId, pid, Math.round(v)), 0);
     });
   });

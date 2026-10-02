@@ -3,14 +3,31 @@
  * core.js — utilities, icons, data model, store and calculations
  * ===================================================================== */
 
-const APP_VERSION = '1.3.2';
+const APP_VERSION = '1.4.0';
 const LS = { data: 'cbt.data.v1', cfg: 'cbt.config.v1', ui: 'cbt.ui.v1', sync: 'cbt.sync.v1' };
 
 /* ---------------- utils ---------------- */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const uid = (p = '') => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-const stamp = () => new Date().toISOString();
+/* Edit timestamps never go backwards: a new edit is always stamped later than anything this
+ * device has already seen, even if the phone's clock is wrong (newest edit wins when syncing). */
+const CLOCK = { max: '' };
+function stamp() {
+  let t = new Date().toISOString();
+  if (CLOCK.max && t <= CLOCK.max) t = new Date(Date.parse(CLOCK.max) + 1).toISOString();
+  CLOCK.max = t;
+  return t;
+}
+function observeClock(d) {
+  if (!d) return;
+  const see = (u) => { if (typeof u === 'string' && /^\d{4}-\d\d-\d\dT/.test(u) && u > CLOCK.max) CLOCK.max = u; };
+  if (d.settings) see(d.settings.updatedAt);
+  for (const c of ['categories', 'accounts', 'transactions', 'budgets', 'goals', 'contributions']) for (const r of d[c] || []) see(r.updatedAt);
+}
+/** Valid YYYY-MM-DD between 2000 and 2100. */
+const isValidDate = (s) => typeof s === 'string' && /^(20\d\d|2100)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s) && (() => { const d = new Date(`${s}T00:00:00Z`); return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; })();
+const BIG_AMOUNT = 100e6; // Rp 100 jt: ask "is that right?" above this
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const sum = (arr, fn = (x) => x) => arr.reduce((a, x) => a + (Number(fn(x)) || 0), 0);
@@ -133,6 +150,7 @@ function parseAmount(input, style = 'auto') {
   let neg = false;
   if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
   s = s.replace(/idr|rp\.?|usd|sgd|jpy|s\$|us\$|\$|¥|￥|yen|\s| /g, '');
+  s = s.replace(/[.,]-$/, ''); // "50.000,-" style prices
   if (s.startsWith('-')) { neg = !neg; s = s.slice(1); } else if (s.startsWith('+')) s = s.slice(1);
   if (s.endsWith('-')) { neg = !neg; s = s.slice(0, -1); }
   let mult = 1;
@@ -252,13 +270,14 @@ function mergeData(a, b) {
   if (!a) return normalizeData(b);
   if (!b) return normalizeData(a);
   const out = { schema: 1, createdAt: a.createdAt || b.createdAt };
-  out.settings = (a.settings?.updatedAt || '') >= (b.settings?.updatedAt || '') ? a.settings : b.settings;
+  const newer = (x, y) => { const xu = (x && x.updatedAt) || '', yu = (y && y.updatedAt) || ''; return xu !== yu ? xu > yu : JSON.stringify(x || {}) > JSON.stringify(y || {}); };
+  out.settings = newer(b.settings, a.settings) ? b.settings : a.settings;
   for (const c of COLLECTIONS) {
     const map = new Map();
     for (const r of a[c] || []) map.set(r.id, r);
     for (const r of b[c] || []) {
       const e = map.get(r.id);
-      if (!e || (r.updatedAt || '') > (e.updatedAt || '')) map.set(r.id, r);
+      if (!e || newer(r, e)) map.set(r.id, r);
     }
     out[c] = [...map.values()];
   }
@@ -355,12 +374,13 @@ const store = {
   _pending: false,
   load() {
     this.data = normalizeData(lsGet(LS.data, null)); this.version++;
+    observeClock(this.data);
     if (migrateData(this.data)) { this.persist(); this._migrated = true; }
   },
   persist() {
     if (!lsSet(LS.data, this.data)) toast('Could not save to this browser (storage full or blocked).', 'bad');
   },
-  replace(data) { this.data = normalizeData(data); migrateData(this.data); this.version++; this.persist(); },
+  replace(data) { this.data = normalizeData(data); observeClock(this.data); migrateData(this.data); this.version++; this.persist(); },
   all(c) {
     const r = this.data[c].filter((x) => !x.deleted);
     // accounts follow the order you set on the Balance page (drag the ≡ handle)

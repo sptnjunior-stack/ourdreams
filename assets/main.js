@@ -221,7 +221,8 @@ const App = {
       case 'edit-tx': { const t = store.get('transactions', id); if (t) openTxForm(t); break; }
       case 'import': Importer.open(); break;
       case 'export-csv': exportCSV(); break;
-      case 'export-json': downloadFile(`budget-backup-${todayStr()}.json`, JSON.stringify(store.data, null, 1), 'application/json'); break;
+      case 'export-json': downloadFile(`budget-backup-${todayStr()}.json`, JSON.stringify(store.data, null, 1), 'application/json'); cfg.lastBackup = new Date().toISOString(); saveCfg(); this.render(); break;
+      case 'local-snooze': cfg.localSnooze = new Date(Date.now() + 86400e3).toISOString(); saveCfg(); this.render(); break;
       case 'dash-trend': ui.dashTrend = v; this.render(); break;
       case 'filter-cat': this.setCatFilter(id); break;
       case 'filter-person': this.setFilter({ person: id }); break;
@@ -691,6 +692,7 @@ function openTxForm(existing, preset = {}) {
     const rate = cur === 'IDR' ? 1 : parseAmount(F('rate').value, 'us');
     if (!isFinite(rate) || rate <= 0) { toast('Please enter a valid exchange rate.', 'bad'); return null; }
     if (!F('date').value) { toast('Please choose a date.', 'bad'); return null; }
+    if (!isValidDate(F('date').value)) { toast(`"${F('date').value}" doesn't look right. Please pick a date between 2000 and 2100.`, 'bad'); F('date').focus(); return null; }
     let fee = 0;
     if (feeOn && F('fee') && F('fee').value.trim()) {
       fee = parseAmount(F('fee').value);
@@ -729,8 +731,13 @@ function openTxForm(existing, preset = {}) {
     }
     return rec;
   };
-  const save = (more) => {
+  const save = async (more) => {
     const rec = collect(); if (!rec) return;
+    const big = Math.abs(txBase(rec));
+    if (big >= BIG_AMOUNT && Math.abs(txBase(t)) !== big) {
+      const ok = await confirmBox('Is this amount right?', `<p style="margin-top:0">You entered <b style="font-size:18px">${money(big)}</b>${rec.description ? ` for <b>${esc(rec.description)}</b>` : ''}.</p><p class="hint">That's ${shortIDR(big).replace('M', ' miliar').replace('jt', ' juta')}. Big amounts are often an extra 000 by mistake.</p>`, { okLabel: 'Yes, save it', danger: false });
+      if (!ok) { F('amount').focus(); F('amount').select && F('amount').select(); return; }
+    }
     store.upsert('transactions', rec);
     Modal.close();
     toast(isNew ? `Added ${money(txBase(rec))}${rec.fee ? ' + fee' : ''}${rec.description ? ` · ${rec.description}` : ''}` : 'Saved.');
@@ -790,6 +797,7 @@ function openPayBill(card) {
     if (!isFinite(v) || v <= 0) { toast('Please enter the amount you paid.', 'bad'); return; }
     if (!form.elements.from.value) { toast('Add a bank account to pay from first.', 'bad'); return; }
     const from = store.get('accounts', form.elements.from.value);
+    if (form.elements.date.value && !isValidDate(form.elements.date.value)) { toast('Please pick a date between 2000 and 2100.', 'bad'); return; }
     store.upsert('transactions', { id: uid('t_'), type: 'transfer', date: form.elements.date.value || today, amount: convert(v, card.currency, from.currency), currency: from.currency, rate: rateOf(from.currency),
       toAmount: from.currency === card.currency ? null : v, description: `Pay ${card.name} bill`, categoryId: '', person: card.owner === 'shared' ? me() : card.owner, accountId: from.id, toAccountId: card.id, notes: '' });
     Modal.close(); toast(`Payment of ${fmt(v, card.currency)} recorded.`);
@@ -921,6 +929,7 @@ function openGoalForm(g) {
     const name = E.name.value.trim(); const target = parseAmount(E.target.value);
     if (!name) { toast('Please name your goal.', 'bad'); return; }
     if (!isFinite(target) || target <= 0) { toast('Please enter a target amount.', 'bad'); return; }
+    if (E.targetDate.value && !isValidDate(E.targetDate.value)) { toast('Please pick a target date between 2000 and 2100.', 'bad'); return; }
     store.batch(() => {
       store.upsert('goals', { ...g, name, target: Math.round(target), targetDate: E.targetDate.value, owner, accountId: E.accountId.value, color: E.color.value, notes: E.notes.value.trim() });
       if (isNew && E.start && E.start.value.trim()) {
@@ -961,6 +970,7 @@ function openContributionForm(g) {
   const save = () => {
     const a = parseAmount(form.elements.amount.value);
     if (!isFinite(a) || a <= 0) { toast('Please enter an amount.', 'bad'); return; }
+    if (form.elements.date.value && !isValidDate(form.elements.date.value)) { toast('Please pick a date between 2000 and 2100.', 'bad'); return; }
     store.upsert('contributions', { id: uid('gc_'), goalId: g.id, date: form.elements.date.value || todayStr(), amount: Math.round(a) * sign, person, note: form.elements.note.value.trim() });
     Modal.close(); toast(sign > 0 ? 'Nice — money added to your goal.' : 'Withdrawal recorded.');
   };
@@ -1006,6 +1016,7 @@ function openAccountForm(a) {
     const day = (v) => { const n = Math.round(Number(v)); return n >= 1 && n <= 31 ? n : ''; };
     const limit = debt && E.limit.value.trim() ? parseAmount(E.limit.value) : '';
     if (limit !== '' && !isFinite(limit)) { toast('Credit limit is not a number.', 'bad'); return; }
+    if (E.openingDate.value && !isValidDate(E.openingDate.value)) { toast('Please pick a starting date between 2000 and 2100.', 'bad'); return; }
     store.upsert('accounts', { ...a, name, type: E.type.value, currency: E.currency.value, owner, opening, openingDate: E.openingDate.value, archived: E.archived ? E.archived.checked : false,
       limit: debt ? limit : '', closingDay: debt ? day(E.closingDay.value) : '', dueDay: debt ? day(E.dueDay.value) : '' });
     Modal.close(); toast('Account saved.');
@@ -1086,6 +1097,7 @@ async function ghSave() {
   const firstTime = !sync.meta.lastSync;
   sync.meta.dirty = true; sync.saveMeta();
   if (firstTime) sync.start(); // sets up timers on first connect
+  cfg.localSince = ''; saveCfg();
   await sync.run();
   App.render();
   if (sync.state === 'error') toast(sync.meta.error || 'Sync failed', 'bad');

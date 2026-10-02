@@ -137,6 +137,7 @@ const sync = {
       try {
         for (let attempt = 0; attempt < 5; attempt++) {
           const remote = await gh.read();
+          observeClock(remote.data);
           const before = canon(store.data);
           const merged = remote.data ? mergeData(store.data, remote.data) : store.data;
           const mergedStr = canon(merged);
