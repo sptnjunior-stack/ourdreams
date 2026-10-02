@@ -349,7 +349,7 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
   .search { flex: 1 1 100%; }
   .form-grid, .form-grid.tx-grid { grid-template-columns: minmax(0, 1fr); }
   .kv { grid-template-columns: 1fr; }
-  .modal-back { padding: 0; align-items: stretch; }
+  .modal-back { padding: 0; align-items: flex-start; }
   .modal { border-radius: 0; min-height: 100%; max-width: none; }
   .hide-sm { display: none !important; }
   .goal-stats { grid-template-columns: 1fr 1fr; }
@@ -430,3 +430,25 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .flag-extra { display: flex; flex-direction: column; gap: 8px; }
 .flag-extra input { width: 100%; }
 @media (max-width: 860px) { table.t.tx td.d-desc .flag-note { max-width: none; } }
+
+/* ---------- cards & paylater ---------- */
+.cc-row { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.cc-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.cc-row:first-of-type { padding-top: 0; }
+.cc-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cc-top .grow { flex: 1; min-width: 0; }
+.cc-actions { display: flex; gap: 6px; }
+.cc-nums { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.card-banner { align-items: center; flex-wrap: wrap; }
+.inst-row { gap: 8px; }
+.inst-row > span { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+.inst-extra { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+
+/* ---------- drag to reorder ---------- */
+.name-cell { white-space: nowrap; }
+.drag-handle { border: 0; background: none; color: var(--muted); padding: 4px 4px; margin: -4px 4px -4px -6px; border-radius: 6px; cursor: grab; touch-action: none; display: inline-flex; vertical-align: middle; opacity: .6; }
+.drag-handle:hover, .drag-handle:focus-visible { opacity: 1; background: var(--surface-2); }
+.drag-handle svg.i { width: 16px; height: 16px; }
+tr.dragging td { background: var(--primary-soft) !important; }
+tr.dragging .drag-handle { cursor: grabbing; opacity: 1; color: var(--primary); }
+body.is-sorting, body.is-sorting * { cursor: grabbing !important; user-select: none !important; -webkit-user-select: none !important; }

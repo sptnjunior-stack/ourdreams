@@ -3,7 +3,7 @@
  * core.js — utilities, icons, data model, store and calculations
  * ===================================================================== */
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 const LS = { data: 'cbt.data.v1', cfg: 'cbt.config.v1', ui: 'cbt.ui.v1', sync: 'cbt.sync.v1' };
 
 /* ---------------- utils ---------------- */
@@ -92,6 +92,7 @@ const ICONS = {
   calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
   user: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
   up: '<path d="m18 15-6-6-6 6"/>',
+  grip: '<line x1="5" x2="19" y1="8" y2="8"/><line x1="5" x2="19" y1="12" y2="12"/><line x1="5" x2="19" y1="16" y2="16"/>',
   flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>',
 };
 function icon(name, cls = '') { return `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`; }
@@ -167,7 +168,14 @@ const FEE_CAT = 'c_bank-admin-fees';
 const DEFAULT_FIXED = new Set(['c_housing-rent', 'c_utilities-bills', 'c_phone-internet', 'c_insurance', 'c_debt-installments', 'c_subscriptions', 'c_family', 'c_savings-investment']);
 const GROUPS = ['Needs', 'Wants', 'Savings'];
 const GROUP_COLORS = { Needs: '#0ea5e9', Wants: '#f97316', Savings: '#10b981', Income: '#22c55e' };
-const ACCOUNT_TYPES = { bank: 'Bank', ewallet: 'E-wallet', cash: 'Cash', credit: 'Credit card', savings: 'Savings', investment: 'Investment', other: 'Other' };
+const ACCOUNT_TYPES = { bank: 'Bank', ewallet: 'E-wallet', cash: 'Cash', credit: 'Credit card', paylater: 'Paylater', savings: 'Savings', investment: 'Investment', other: 'Other' };
+/** Credit cards and paylater: money you owe (balance is negative while you owe). */
+const isDebtAcc = (a) => !!a && (a.type === 'credit' || a.type === 'paylater');
+/** Name sounds like a credit card / paylater but the account type says otherwise (e.g. imported as "Bank"). */
+const DEBT_NAME = /(credit|kartu kredit|\bcc\b|\bkk\b|visa|mastercard|paylater|pay later|kredivo|akulaku|atome|indodana|home credit|spaylater|gopaylater|traveloka paylater|cicil)/i;
+const PAYLATER_NAME = /(paylater|pay later|kredivo|akulaku|atome|indodana|home credit|spaylater|gopaylater)/i;
+const looksLikeDebt = (a) => !!a && !isDebtAcc(a) && DEBT_NAME.test(a.name || '');
+const suggestedDebtType = (a) => (PAYLATER_NAME.test(a.name || '') ? 'paylater' : 'credit');
 
 const DEFAULT_CATEGORIES = [
   ['Groceries', 'expense', 'Needs', '#16a34a'],
@@ -353,7 +361,11 @@ const store = {
     if (!lsSet(LS.data, this.data)) toast('Could not save to this browser (storage full or blocked).', 'bad');
   },
   replace(data) { this.data = normalizeData(data); migrateData(this.data); this.version++; this.persist(); },
-  all(c) { return this.data[c].filter((r) => !r.deleted); },
+  all(c) {
+    const r = this.data[c].filter((x) => !x.deleted);
+    // accounts follow the order you set on the Balance page (drag the ≡ handle)
+    return c === 'accounts' ? r.sort((a, b) => (a.order ?? 1e6) - (b.order ?? 1e6)) : r;
+  },
   get(c, id) { return id ? this.data[c].find((r) => r.id === id && !r.deleted) : undefined; },
   upsert(c, rec) {
     rec = { ...rec, updatedAt: stamp(), updatedBy: me() };
@@ -465,6 +477,24 @@ function principalAmt(t) {
 function outflowAmt(t) { return principalAmt(t) + feeAbs(t); }
 const principalIDR = (t) => toIDR(t, principalAmt(t));
 const feeIDR = (t) => toIDR(t, feeAbs(t));
+/* ---- installments (cicilan) on a credit card / paylater ----
+ * t.installment = { months: n, interest: monthly interest/fee in the tx currency }.
+ * The full price is owed on the card from the purchase date, but reports count 1/n of it
+ * each month (as fixed spending), starting in the purchase month. */
+const instMonths = (t) => (t.type === 'expense' && t.installment && Number(t.installment.months) > 1 ? Math.round(Number(t.installment.months)) : 0);
+function addMonthsToDate(ds, k) {
+  const ym = addMonths(ds.slice(0, 7), k);
+  return `${ym}-${String(Math.min(Number(ds.slice(8, 10)), daysInMonth(ym))).padStart(2, '0')}`;
+}
+function installmentDates(t) { const n = instMonths(t); return Array.from({ length: n }, (_, k) => addMonthsToDate(t.date, k)); }
+const instInterest = (t) => (instMonths(t) ? Number(t.installment.interest) || 0 : 0);
+/** Portion k (0-based) of the principal, in the transaction currency (last one takes the rounding). */
+function instPortion(t, k) {
+  const n = instMonths(t); const P = principalAmt(t);
+  const dec = (CURRENCIES[t.currency || 'IDR'] || { decimals: 2 }).decimals;
+  const f = 10 ** dec; const each = Math.floor((P / n) * f) / f;
+  return k === n - 1 ? Math.round((P - each * (n - 1)) * f) / f : each;
+}
 function linesOf(t) {
   if (t.deleted) return [];
   const out = [];
@@ -474,9 +504,17 @@ function linesOf(t) {
   const who = isSplit(t) ? PEOPLE : [t.person];
   const p0 = reportable ? principalIDR(t) : 0;
   const feeCat = store.catMap().has(FEE_CAT) ? FEE_CAT : 'c_other';
+  const n = instMonths(t);
+  const dates = n ? installmentDates(t) : null;
+  const intr = n ? toIDR(t, instInterest(t)) : 0;
   for (const p of who) {
     const s = shareOf(t, p); if (!s) continue;
-    if (reportable && p0) out.push({ t, date: t.date, type: t.type, categoryId: t.categoryId, person: p, v: p0 * s });
+    if (reportable && p0) {
+      if (n) {
+        dates.forEach((dt, k) => out.push({ t, date: dt, type: 'expense', categoryId: t.categoryId, person: p, v: toIDR(t, instPortion(t, k)) * s, fixed: true, inst: k + 1 }));
+        if (intr) dates.forEach((dt) => out.push({ t, date: dt, type: 'expense', categoryId: feeCat, person: p, v: intr * s, fee: true, fixed: true }));
+      } else out.push({ t, date: t.date, type: t.type, categoryId: t.categoryId, person: p, v: p0 * s });
+    }
     if (fee) out.push({ t, date: t.date, type: 'expense', categoryId: feeCat, person: p, v: fee * s, fee: true });
   }
   return out;
@@ -633,8 +671,12 @@ function accountBalance(acc, asOf = todayStr()) {
   let bal = Number(acc.opening) || 0;
   const start = acc.openingDate || '0000-00-00';
   for (const t of store.activeTx()) {
-    if (t.date < start || t.date > asOf) continue;
     const cur = t.currency || 'IDR';
+    // monthly installment interest is charged to the card on each installment date
+    if (t.accountId === acc.id && instInterest(t)) {
+      for (const dt of installmentDates(t)) if (dt >= start && dt <= asOf) bal -= convert(instInterest(t), cur, acc.currency, t.rate);
+    }
+    if (t.date < start || t.date > asOf) continue;
     if (t.accountId === acc.id) {
       if (t.type === 'adjustment') bal += convert(t.amount, cur, acc.currency, t.rate);
       else if (t.type === 'income') bal += convert((Number(t.amount) || 0) - feeAbs(t), cur, acc.currency, t.rate);
@@ -648,6 +690,75 @@ function accountBalance(acc, asOf = todayStr()) {
   return bal;
 }
 const accountBalanceIDR = (acc, asOf) => convert(accountBalance(acc, asOf), acc.currency, 'IDR');
+/** Cash & bank vs card/paylater debt (IDR) for a set of accounts. */
+function cashAndDebt(accs, asOf) {
+  let cash = 0, debt = 0;
+  for (const a of accs) { const v = accountBalanceIDR(a, asOf); if (isDebtAcc(a)) debt += v; else cash += v; }
+  return { cash, debt, net: cash + debt };
+}
+
+/* ---- card statements ----
+ * acc.closingDay = statement closing day (1–31), acc.dueDay = payment due day (1–31), acc.limit = credit limit.
+ * A statement covers the day after the previous closing date up to the closing date. */
+function dayInMonth(ym, day) { return `${ym}-${String(Math.min(day, daysInMonth(ym))).padStart(2, '0')}`; }
+function cardStatement(acc, offset = 0, ref = todayStr()) {
+  const cd = Number(acc.closingDay) || 0;
+  if (!cd) return null;
+  let ym = ref.slice(0, 7);
+  if (dayInMonth(ym, cd) > ref) ym = addMonths(ym, -1);
+  ym = addMonths(ym, offset);
+  const close = dayInMonth(ym, cd);
+  const from = addDays(dayInMonth(addMonths(ym, -1), cd), 1);
+  const nextClose = dayInMonth(addMonths(ym, 1), cd);
+  const dd = Number(acc.dueDay) || 0;
+  let dueDate = null;
+  if (dd) { dueDate = dayInMonth(ym, dd); if (dueDate <= close) dueDate = dayInMonth(addMonths(ym, 1), dd); }
+  const items = []; let paidAfter = 0;
+  const conv = (t, v) => convert(v, t.currency || 'IDR', acc.currency, t.rate);
+  const inP = (d) => d >= from && d <= close;
+  for (const t of store.activeTx()) {
+    if (t.accountId === acc.id) {
+      const n = instMonths(t);
+      if (n) {
+        installmentDates(t).forEach((dt, k) => {
+          if (!inP(dt)) return;
+          items.push({ t, date: dt, label: `${t.description || 'Purchase'} · installment ${k + 1}/${n}`, amount: conv(t, instPortion(t, k)) });
+          if (instInterest(t)) items.push({ t, date: dt, label: `${t.description || 'Purchase'} · interest ${k + 1}/${n}`, amount: conv(t, instInterest(t)) });
+        });
+        if (feeAbs(t) && inP(t.date)) items.push({ t, date: t.date, label: `${t.description || 'Purchase'} · admin fee`, amount: conv(t, feeAbs(t)) });
+      } else if ((t.type === 'expense' || t.type === 'transfer') && inP(t.date)) items.push({ t, date: t.date, label: t.description || (t.type === 'transfer' ? 'Transfer out' : 'Purchase'), amount: conv(t, outflowAmt(t)) });
+      else if ((t.type === 'income' || t.type === 'adjustment') && inP(t.date)) items.push({ t, date: t.date, label: t.description || (t.type === 'income' ? 'Refund / credit' : 'Adjustment'), amount: -conv(t, t.type === 'income' ? (Number(t.amount) || 0) - feeAbs(t) : t.amount) });
+    }
+    if (t.type === 'transfer' && t.toAccountId === acc.id && t.date > close && (offset < 0 ? t.date <= nextClose : true)) {
+      paidAfter += t.toAmount !== undefined && t.toAmount !== null && t.toAmount !== '' ? Number(t.toAmount) : conv(t, principalAmt(t));
+    }
+  }
+  items.sort((a, b) => a.date.localeCompare(b.date));
+  const billed = sum(items, (i) => i.amount);
+  return { from, close, dueDate, items, billed, paidAfter, due: Math.max(0, Math.round((billed - paidAfter) * 100) / 100) };
+}
+/** Debt still to be billed in later statements (future installment portions & interest). */
+function unbilledInstallments(acc, ref = todayStr()) {
+  let v = 0;
+  for (const t of store.activeTx()) {
+    if (t.accountId !== acc.id || !instMonths(t)) continue;
+    installmentDates(t).forEach((dt, k) => { if (dt > ref) v += convert(instPortion(t, k), t.currency || 'IDR', acc.currency, t.rate); });
+  }
+  return v;
+}
+/** Cards with a bill due soon (or overdue) that isn't fully paid yet. */
+function cardReminders(ref = todayStr(), daysAhead = 7) {
+  const out = [];
+  for (const a of store.all('accounts').filter((x) => isDebtAcc(x) && !x.archived)) {
+    for (const off of [0, -1]) {
+      const st = cardStatement(a, off, ref);
+      if (!st || !st.dueDate || st.due <= 0) continue;
+      const days = daysBetween(ref, st.dueDate);
+      if (days <= daysAhead && days >= -10) { out.push({ a, st, days }); break; }
+    }
+  }
+  return out.sort((x, y) => x.days - y.days);
+}
 
 /* Goals */
 function goalSaved(g, asOf = todayStr()) {

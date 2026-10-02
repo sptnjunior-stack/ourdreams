@@ -114,6 +114,7 @@ const App = {
       $('#page').innerHTML = `<div class="banner bad">${icon('alert')}<div class="grow">Something went wrong drawing this page: ${esc(e.message)}</div></div>`;
     }
     $('#fab').classList.toggle('hidden', ui.page === 'settings');
+    if (this._refocus) { focusSel = this._refocus; this._refocus = null; caret = null; }
     if (focusSel) {
       const el = $(focusSel);
       if (el) { el.focus({ preventScroll: true }); try { if (caret !== null && el.setSelectionRange && el.type !== 'number') el.setSelectionRange(caret, caret); else if (el.select && el.dataset.bud) el.select(); } catch (e) { /* ignore */ } }
@@ -125,6 +126,7 @@ const App = {
       ${PAGES.map(([id, label, ic]) => `<a class="nav-item ${ui.page === id ? 'active' : ''}" href="#${id}">${icon(ic)}${label}</a>`).join('')}
       <div class="sidebar-foot">
         ${sync.pillHTML()}
+        <div class="small muted" title="App version: check this after uploading new files">Version ${APP_VERSION}</div>
         <div class="me-switch">Using this device
           <div class="seg full">${['junior', 'sabit'].map((p) => `<button class="${me() === p ? 'on' : ''}" data-action="set-me" data-v="${p}"><span class="dot" style="background:${pcolor(p)}"></span>${esc(pname(p))}</button>`).join('')}</div>
         </div>
@@ -335,6 +337,14 @@ const App = {
       case 'add-acc': openAccountForm(); break;
       case 'edit-acc': openAccountForm(store.get('accounts', id)); break;
       case 'reconcile': openReconcile(store.get('accounts', id)); break;
+      case 'pay-bill': openPayBill(store.get('accounts', id)); break;
+      case 'set-debt-type': {
+        const ids = String(id || '').split(',').filter(Boolean);
+        store.batch(() => ids.forEach((x) => { const a = store.get('accounts', x); if (a && !isDebtAcc(a)) store.upsert('accounts', { ...a, type: suggestedDebtType(a), opening: -Math.abs(Number(a.opening) || 0) }); }));
+        toast(ids.length === 1 ? 'Updated. Add its limit, statement and due day with the pencil icon.' : `Updated ${ids.length} accounts. Add limits, statement and due days with the pencil icons.`);
+        break;
+      }
+      case 'statement': openStatement(store.get('accounts', id)); break;
       case 'set-me': cfg.me = v; saveCfg(); this.render(); toast(`This device is now ${pname(v)}'s.`); break;
       case 'set-theme': cfg.theme = v; saveCfg(); applyTheme(); this.render(); break;
       case 'fetch-rates': fetchRates(); break;
@@ -460,6 +470,16 @@ function openTxForm(existing, preset = {}) {
         </div>
         <label class="field acc-row"><span id="acc-label">Paid from</span><select name="accountId">${accOpts(t.accountId)}</select></label>
         <label class="field to-row"><span id="to-label">To account</span><select name="toAccountId">${accOpts(t.toAccountId)}</select></label>
+        <div class="field full inst-row">
+          <span>Pay in</span>
+          <div class="chip-row">${[1, 3, 6, 12, 24].map((n) => `<button type="button" class="pick" data-inst="${n}">${n === 1 ? 'Full' : `${n}×`}</button>`).join('')}
+            <input type="number" name="instMonths" min="2" max="60" placeholder="Other ×" aria-label="Number of months" style="width:96px"></div>
+          <div class="inst-extra">
+            <label class="split-amt"><span>Interest / fee per month (optional)</span><input type="text" name="instInterest" inputmode="decimal" data-nohint placeholder="e.g. 50.000 or 2,95%"></label>
+          </div>
+          <div class="fee-sum" id="inst-sum"></div>
+        </div>
+        <div class="field full inst-hint hidden"><div class="banner info" style="margin:0">${icon('info')}<div class="grow small"><span id="inst-hint-text"></span></div><button type="button" class="btn sm" data-fix-debt>Set as card</button></div></div>
         <label class="field to-amt-row">Amount received<input type="text" name="toAmount" inputmode="decimal" value="${t.toAmount != null && t.toAmount !== '' ? fmtInput(t.toAmount, 'USD') : ''}" placeholder="only if currencies differ"></label>
         <label class="field full">Notes<textarea name="notes" rows="2" placeholder="Optional">${esc(t.notes)}</textarea></label>
         <div class="field full flag-field">
@@ -484,6 +504,7 @@ function openTxForm(existing, preset = {}) {
   let type = t.type, person = isSplit(t) ? SPLIT : t.person;
   let ratio = clamp(Number(t.splitJunior ?? 0.5), 0, 1);
   let feeOn = hasFee;
+  let months = instMonths(t) || 1;
   const fillCats = () => {
     const ctype = type === 'income' ? 'income' : 'expense';
     const cur = F('categoryId').value || t.categoryId;
@@ -536,6 +557,24 @@ function openTxForm(existing, preset = {}) {
       $('#fee-help', m).innerHTML = type === 'income' ? 'The fee is taken from what you receive. It is counted in "Bank &amp; Admin Fees".' : '<b>+</b> = charged on top of the amount · <b>−</b> = already inside the amount. It is counted in "Bank &amp; Admin Fees".';
     }
     if (person === SPLIT) updateShares(document.activeElement === F('shareJunior'));
+    // installments: only for spending paid with a credit card / paylater
+    const instOk = type === 'expense' && isDebtAcc(fromAcc);
+    show('.inst-row', instOk);
+    const hintOn = type === 'expense' && looksLikeDebt(fromAcc);
+    show('.inst-hint', hintOn);
+    if (hintOn) $('#inst-hint-text', m).innerHTML = `Paying in installments? <b>${esc(fromAcc.name)}</b> is set up as ${esc(ACCOUNT_TYPES[fromAcc.type] || fromAcc.type)}. Set it as a ${suggestedDebtType(fromAcc) === 'paylater' ? 'paylater' : 'credit card'} to see the "Pay in" options.`;
+    if (!instOk) months = 1;
+    m.querySelectorAll('[data-inst]').forEach((b) => b.classList.toggle('on', +b.dataset.inst === months || (months > 1 && ![3, 6, 12, 24].includes(months) && false)));
+    if (document.activeElement !== F('instMonths')) F('instMonths').value = months > 1 && ![3, 6, 12, 24].includes(months) ? months : '';
+    show('.inst-extra', instOk && months > 1);
+    const isum = $('#inst-sum', m);
+    const A2 = amountNow();
+    if (instOk && months > 1 && isFinite(A2)) {
+      const P = feeNow() < 0 ? A2 - Math.abs(feeNow()) : A2;
+      const intr = parseInterest(F('instInterest').value, P);
+      const last = addMonthsToDate(F('date').value || todayStr(), months - 1);
+      isum.innerHTML = `<b>${fmt(P / months, cur)}</b> per month × ${months}${intr ? ` + ${fmt(intr, cur)} interest` : ''} · ${fmtDate(F('date').value || todayStr(), false)} – ${fmtDate(last)}. The card owes the full ${fmt(P, cur)} now; budgets count one month at a time (as a fixed cost).`;
+    } else isum.innerHTML = '';
   };
   fillCats(); refresh();
   F('flagged').addEventListener('change', () => { show('.flag-extra', F('flagged').checked); });
@@ -552,6 +591,17 @@ function openTxForm(existing, preset = {}) {
     refresh();
   });
   m.querySelectorAll('[data-split]').forEach((b) => b.onclick = () => { ratio = +b.dataset.split; updateShares(); });
+  m.querySelectorAll('[data-inst]').forEach((b) => b.onclick = () => { months = +b.dataset.inst; F('instMonths').value = ''; refresh(); });
+  m.querySelector('[data-fix-debt]').onclick = () => {
+    const a = store.get('accounts', F('accountId').value); if (!a) return;
+    store.upsert('accounts', { ...a, type: suggestedDebtType(a), opening: -Math.abs(Number(a.opening) || 0) });
+    toast(`${a.name} is now a ${suggestedDebtType(a) === 'paylater' ? 'paylater' : 'credit card'} account.`);
+    refresh();
+  };
+  F('instMonths').addEventListener('input', () => { const n = Math.round(Number(F('instMonths').value)); if (n >= 2 && n <= 60) { months = n; refresh(); } });
+  F('instInterest').addEventListener('input', refresh);
+  if (instMonths(t) && instInterest(t)) F('instInterest').value = fmtInput(instInterest(t), t.currency);
+  F('date').addEventListener('change', refresh);
   F('shareJunior').addEventListener('input', () => {
     const a = amountNow(); const s = parseAmount(F('shareJunior').value);
     if (isFinite(a) && a > 0 && isFinite(s)) { ratio = clamp(s / a, 0, 1); updateShares(true); }
@@ -604,6 +654,13 @@ function openTxForm(existing, preset = {}) {
       goalId: m.querySelector('.goal-row').classList.contains('hidden') ? '' : F('goalId').value,
       fee,
     };
+    const instVisible = !m.querySelector('.inst-row').classList.contains('hidden');
+    if (instVisible && months > 1) {
+      const P = principalAmt({ ...rec });
+      const intr = parseInterest(F('instInterest').value, P);
+      if (!isFinite(intr)) { toast('Interest is not a number. Try 50.000 or 2,95%.', 'bad'); return null; }
+      rec.installment = { months, interest: intr };
+    } else rec.installment = null;
     if (rec.person === SPLIT) rec.splitJunior = Math.round(ratio * 10000) / 10000; else delete rec.splitJunior;
     const toAmt = F('toAmount').value.trim();
     rec.toAmount = toVisible && toAmt && !m.querySelector('.to-amt-row').classList.contains('hidden') ? parseAmount(toAmt) : null;
@@ -635,6 +692,77 @@ function openTxForm(existing, preset = {}) {
   };
   const dup = m.querySelector('[data-dup]');
   if (dup) dup.onclick = () => { const rec = collect(); if (!rec) return; Modal.close(); const { id, createdAt, createdBy, updatedAt, updatedBy, importId, ...rest } = rec; void id; void createdAt; void createdBy; void updatedAt; void updatedBy; void importId; openTxForm(null, { ...rest, date: todayStr() }); };
+}
+
+/** "2,95%" → 2,95% of the principal; "50.000" → 50000; empty → 0. */
+function parseInterest(v, principal) {
+  const s = String(v || '').trim(); if (!s) return 0;
+  if (s.endsWith('%')) { const p = parseAmount(s.slice(0, -1).replace('.', ',').replace(/,(?=\d{3}\b)/, '')); return isFinite(p) ? Math.round((principal * p) / 100) : NaN; }
+  return parseAmount(s);
+}
+
+/* ---------------- credit card: pay bill & statement ---------------- */
+function openPayBill(card) {
+  if (!card) return;
+  const today = todayStr();
+  const owed = Math.max(0, -accountBalance(card, today));
+  const st = cardStatement(card, 0);
+  const prev = st && st.due <= 0 ? null : st;
+  const options = [];
+  if (prev && prev.due > 0) options.push(['due', `Statement due · ${fmt(prev.due, card.currency)}`, prev.due]);
+  if (owed > 0) options.push(['full', `Everything owed now · ${fmt(owed, card.currency)}`, owed]);
+  const later = unbilledInstallments(card);
+  const banks = store.all('accounts').filter((a) => !isDebtAcc(a) && !a.archived);
+  const fromId = (banks.find((a) => a.owner === card.owner) || banks[0] || {}).id || '';
+  let pick = options[0] ? options[0][0] : 'other';
+  const m = Modal.open(`${Modal.head(`Pay ${esc(card.name)} bill`, prev && prev.dueDate ? `Statement ${fmtDate(prev.from, false)} – ${fmtDate(prev.close, false)} · due ${fmtDate(prev.dueDate)}` : 'Records a transfer from your bank to the card')}
+    <form class="modal-body" id="pay-form"><div class="form-grid">
+      <div class="field full"><span>Amount</span><div class="chip-row">${options.map(([k, l]) => `<button type="button" class="pick ${pick === k ? 'on' : ''}" data-pay="${k}">${l}</button>`).join('')}<button type="button" class="pick ${pick === 'other' ? 'on' : ''}" data-pay="other">Other</button></div></div>
+      <label class="field">Pay amount (${card.currency})<input type="text" name="amount" inputmode="decimal" data-money="${card.currency}" value="${options[0] ? fmtInput(options[0][2], card.currency) : ''}"></label>
+      <label class="field">Date<input type="date" name="date" value="${today}"></label>
+      <label class="field full">From account<select name="from">${banks.map((a) => `<option value="${a.id}" ${a.id === fromId ? 'selected' : ''}>${esc(a.name)} (${a.currency})</option>`).join('')}</select></label>
+    </div>
+    <p class="hint">${later > 0 ? `${fmt(later, card.currency)} of future installments isn't billed yet, so "Everything owed now" includes it. ` : ''}A card payment is a transfer, not spending: the purchases were already counted when you made them.</p></form>
+    <div class="modal-foot"><span class="spacer"></span><button class="btn" data-close>Cancel</button><button class="btn primary" data-save>${icon('check')} Record payment</button></div>`);
+  const form = $('#pay-form', m);
+  m.querySelectorAll('[data-pay]').forEach((b) => b.onclick = () => {
+    pick = b.dataset.pay; m.querySelectorAll('[data-pay]').forEach((x) => x.classList.toggle('on', x === b));
+    const o = options.find((x) => x[0] === pick); if (o) form.elements.amount.value = fmtInput(o[2], card.currency); else { form.elements.amount.value = ''; form.elements.amount.focus(); }
+  });
+  const save = () => {
+    const v = parseAmount(form.elements.amount.value);
+    if (!isFinite(v) || v <= 0) { toast('Please enter the amount you paid.', 'bad'); return; }
+    if (!form.elements.from.value) { toast('Add a bank account to pay from first.', 'bad'); return; }
+    const from = store.get('accounts', form.elements.from.value);
+    store.upsert('transactions', { id: uid('t_'), type: 'transfer', date: form.elements.date.value || today, amount: convert(v, card.currency, from.currency), currency: from.currency, rate: rateOf(from.currency),
+      toAmount: from.currency === card.currency ? null : v, description: `Pay ${card.name} bill`, categoryId: '', person: card.owner === 'shared' ? me() : card.owner, accountId: from.id, toAccountId: card.id, notes: '' });
+    Modal.close(); toast(`Payment of ${fmt(v, card.currency)} recorded.`);
+  };
+  form.onsubmit = (e) => { e.preventDefault(); save(); };
+  m.querySelector('[data-save]').onclick = save;
+}
+function openStatement(card, offset = 0) {
+  if (!card) return;
+  const st = cardStatement(card, offset);
+  if (!st) { toast('Set the statement closing day for this card first (edit the account).', 'bad'); openAccountForm(card); return; }
+  const c = card.currency;
+  const html = `${Modal.head(`${esc(card.name)} statement`, `${fmtDate(st.from)} – ${fmtDate(st.close)}${st.dueDate ? ` · due ${fmtDate(st.dueDate)}` : ''}`)}
+    <div class="modal-body">
+      <div class="toolbar" style="margin-bottom:10px"><button class="btn icon sm" data-st="-1" aria-label="Previous statement">${icon('left')}</button><span class="small muted">${offset === 0 ? 'Latest statement' : `${-offset} statement${offset === -1 ? '' : 's'} ago`}</span><button class="btn icon sm" data-st="1" ${offset >= 1 ? 'disabled' : ''} aria-label="Next statement">${icon('right')}</button><span class="grow"></span>${offset === 1 ? '<span class="badge">current period, still open</span>' : ''}</div>
+      ${st.items.length ? `<div class="preview-table"><table class="t"><thead><tr><th>Date</th><th>Item</th><th class="r">Amount</th></tr></thead><tbody>
+        ${st.items.map((i) => `<tr><td class="nowrap">${fmtDate(i.date, false)}</td><td>${esc(i.label)}</td><td class="r num nowrap ${i.amount < 0 ? 'good' : ''}">${fmt(i.amount, c)}</td></tr>`).join('')}
+      </tbody></table></div>` : emptyState('Nothing billed', 'No charges on this card in this statement period.')}
+      <div class="list" style="margin-top:12px">
+        <div class="list-row"><div class="grow">Total billed</div><div class="amount">${fmt(st.billed, c)}</div></div>
+        <div class="list-row"><div class="grow">Paid after closing</div><div class="amount good">${fmt(-st.paidAfter, c)}</div></div>
+        <div class="list-row"><div class="grow"><b>${offset === 1 ? 'Building up' : 'Still to pay'}</b></div><div class="amount ${st.due > 0 ? 'bad' : 'good'}">${st.due > 0 ? fmt(st.due, c) : 'Paid ✓'}</div></div>
+      </div>
+      <p class="hint">Check these lines against your bank's statement. Installments show one month's portion; refunds and adjustments are negative.</p>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span><button class="btn" data-close>Close</button>${st.due > 0 && offset <= 0 ? `<button class="btn primary" data-paynow>Pay bill</button>` : ''}</div>`;
+  const m = Modal.open(html, { wide: true });
+  m.querySelectorAll('[data-st]').forEach((b) => b.onclick = () => { Modal.close(); openStatement(card, offset + Number(b.dataset.st)); });
+  const pay = m.querySelector('[data-paynow]'); if (pay) pay.onclick = () => { Modal.close(); openPayBill(card); };
 }
 
 /* ---------------- flag form (quick) ---------------- */
@@ -795,19 +923,35 @@ function openAccountForm(a) {
       <label class="field">Type<select name="type">${Object.entries(ACCOUNT_TYPES).map(([k, l]) => `<option value="${k}" ${a.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="field">Currency<select name="currency">${CUR_CODES.map((c) => `<option ${a.currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
       <div class="field full"><span>Owner</span><div class="seg full">${PERSON_IDS.map((p) => `<button type="button" data-o="${p}" class="${owner === p ? 'on' : ''}">${esc(pname(p))}</button>`).join('')}</div></div>
-      <label class="field">Starting balance<input type="text" name="opening" inputmode="decimal" data-money value="${a.opening ? fmtInput(a.opening, a.currency) : ''}" placeholder="e.g. 12,5jt"><span class="hint">Negative for credit card debt</span></label>
+      <label class="field"><span class="opening-label">${isDebtAcc(a) ? 'Amount owed at start' : 'Starting balance'}</span><input type="text" name="opening" inputmode="decimal" data-money value="${a.opening ? fmtInput(isDebtAcc(a) ? Math.abs(a.opening) : a.opening, a.currency) : ''}" placeholder="e.g. 12,5jt"><span class="hint opening-hint">${isDebtAcc(a) ? 'What you owed on this card on that date' : 'Negative if the account is overdrawn'}</span></label>
       <label class="field">Balance on date<input type="date" name="openingDate" value="${a.openingDate || ''}"><span class="hint">Only transactions from this date on are counted</span></label>
+      <label class="field debt-only">Credit limit<input type="text" name="limit" inputmode="decimal" data-money value="${a.limit ? fmtInput(a.limit, a.currency) : ''}" placeholder="e.g. 15jt (optional)"></label>
+      <label class="field debt-only">Statement closing day<input type="number" name="closingDay" min="1" max="31" value="${a.closingDay || ''}" placeholder="e.g. 25"><span class="hint">Day of the month your statement is printed</span></label>
+      <label class="field debt-only">Payment due day<input type="number" name="dueDay" min="1" max="31" value="${a.dueDay || ''}" placeholder="e.g. 10"><span class="hint">You'll get a reminder 7 days before</span></label>
       ${isNew ? '' : `<label class="check full"><input type="checkbox" name="archived" ${a.archived ? 'checked' : ''}> Archived (hidden from lists)</label>`}
     </div></form>
     <div class="modal-foot">${isNew ? '' : `<button class="btn danger" data-del>${icon('trash')} Delete</button>`}<span class="spacer"></span><button class="btn" data-close>Cancel</button><button class="btn primary" data-save>${icon('check')} Save</button></div>`);
   const form = $('#acc-form', m);
   m.querySelectorAll('[data-o]').forEach((b) => b.onclick = () => { owner = b.dataset.o; m.querySelectorAll('[data-o]').forEach((x) => x.classList.toggle('on', x === b)); });
+  const syncType = () => {
+    const debt = isDebtAcc({ type: form.elements.type.value });
+    m.querySelectorAll('.debt-only').forEach((el) => el.classList.toggle('hidden', !debt));
+    m.querySelector('.opening-label').textContent = debt ? 'Amount owed at start' : 'Starting balance';
+    m.querySelector('.opening-hint').textContent = debt ? 'What you owed on this card on that date' : 'Negative if the account is overdrawn';
+  };
+  form.elements.type.addEventListener('change', syncType); syncType();
   const save = () => {
     const E = form.elements;
     const name = E.name.value.trim(); if (!name) { toast('Please enter a name.', 'bad'); return; }
-    const opening = E.opening.value.trim() ? parseAmount(E.opening.value) : 0;
+    let opening = E.opening.value.trim() ? parseAmount(E.opening.value) : 0;
     if (!isFinite(opening)) { toast('Starting balance is not a number.', 'bad'); return; }
-    store.upsert('accounts', { ...a, name, type: E.type.value, currency: E.currency.value, owner, opening, openingDate: E.openingDate.value, archived: E.archived ? E.archived.checked : false });
+    const debt = isDebtAcc({ type: E.type.value });
+    if (debt) opening = -Math.abs(opening);
+    const day = (v) => { const n = Math.round(Number(v)); return n >= 1 && n <= 31 ? n : ''; };
+    const limit = debt && E.limit.value.trim() ? parseAmount(E.limit.value) : '';
+    if (limit !== '' && !isFinite(limit)) { toast('Credit limit is not a number.', 'bad'); return; }
+    store.upsert('accounts', { ...a, name, type: E.type.value, currency: E.currency.value, owner, opening, openingDate: E.openingDate.value, archived: E.archived ? E.archived.checked : false,
+      limit: debt ? limit : '', closingDay: debt ? day(E.closingDay.value) : '', dueDay: debt ? day(E.dueDay.value) : '' });
     Modal.close(); toast('Account saved.');
   };
   form.onsubmit = (e) => { e.preventDefault(); save(); };

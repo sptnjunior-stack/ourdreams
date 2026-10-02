@@ -502,7 +502,7 @@ const Importer = {
         let accountId = r.accountId;
         if (accountId === '__new__') {
           const key = r.accRaw.toLowerCase();
-          if (!newAccs[key]) newAccs[key] = store.upsert('accounts', { id: uid('a_'), name: r.accRaw, type: /cash|tunai/i.test(r.accRaw) ? 'cash' : /ovo|gopay|dana|shopeepay|linkaja|wallet/i.test(r.accRaw) ? 'ewallet' : /credit|kartu kredit|cc\b/i.test(r.accRaw) ? 'credit' : 'bank', owner: (() => { const g = guessPerson(r.accRaw) || r.person; return g === SPLIT ? 'shared' : g; })(), currency: 'IDR', opening: 0, openingDate: '' }).id;
+          if (!newAccs[key]) newAccs[key] = store.upsert('accounts', { id: uid('a_'), name: r.accRaw, type: /cash|tunai/i.test(r.accRaw) ? 'cash' : PAYLATER_NAME.test(r.accRaw) ? 'paylater' : DEBT_NAME.test(r.accRaw) ? 'credit' : /ovo|gopay|dana|shopeepay|linkaja|wallet/i.test(r.accRaw) ? 'ewallet' : 'bank', owner: (() => { const g = guessPerson(r.accRaw) || r.person; return g === SPLIT ? 'shared' : g; })(), currency: 'IDR', opening: 0, openingDate: '' }).id;
           accountId = newAccs[key];
         }
         store.upsert('transactions', {
