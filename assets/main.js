@@ -60,7 +60,7 @@ const App = {
       h.textContent = !el.value.trim() ? '' : isFinite(v) ? `= ${fmt(v, cur)}` : 'Not a number yet. Try 750rb, 1,5jt or 1.500.000';
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && Modal.isOpen()) Modal.close();
+      if (e.key === 'Escape' && Modal.isOpen() && !e.defaultPrevented) Modal.close();
       const tag = (document.activeElement || {}).tagName;
       if (!Modal.isOpen() && !/INPUT|SELECT|TEXTAREA/.test(tag) && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'n') { e.preventDefault(); openTxForm(); }
     });
@@ -448,7 +448,14 @@ function openTxForm(existing, preset = {}) {
   if (t.person === 'shared') { t.person = SPLIT; t.splitJunior = 0.5; }
   if (isNew && ui.filter.person !== 'all' && !preset.person) { t.person = ui.filter.person; t.accountId = lastAccountFor(t.person); }
   let catTouched = !!existing && !!t.categoryId;
-  const descs = [...new Set(store.activeTx().sort((a, b) => b.date.localeCompare(a.date)).map((x) => (x.description || '').trim()).filter(Boolean))].slice(0, 300);
+  // past descriptions for the suggestion list: newest first, with how often and in which category they were used
+  const descInfo = new Map();
+  for (const x of [...store.activeTx()].sort((a, b) => b.date.localeCompare(a.date))) {
+    const d = (x.description || '').trim(); if (!d) continue;
+    const k = d.toLowerCase();
+    if (!descInfo.has(k)) descInfo.set(k, { text: d, n: 0, categoryId: x.categoryId, amount: txBase(x) });
+    descInfo.get(k).n++;
+  }
   const accOpts = (sel) => `<option value="">— none —</option>${store.all('accounts').filter((a) => !a.archived || a.id === sel).map((a) => `<option value="${a.id}" ${sel === a.id ? 'selected' : ''}>${esc(a.name)} (${a.currency})</option>`).join('')}`;
   const goals = store.all('goals');
   const hasFee = !!(Number(t.fee) || 0);
@@ -472,7 +479,7 @@ function openTxForm(existing, preset = {}) {
             <div class="fee-sum" id="fee-sum"></div>
           </div></div>`}
         <label class="field full rate-row">Exchange rate<div style="display:flex;gap:8px;align-items:center"><span class="muted nowrap" id="rate-label">1 ${t.currency} = Rp</span><input type="text" name="rate" inputmode="decimal" value="${fmtInput(t.rate || rateOf(t.currency), 'USD')}" style="flex:1"></div><span class="hint">Saved with this transaction. Default comes from Settings.</span></label>
-        <label class="field full">Description<input type="text" name="description" list="desc-list" value="${esc(t.description)}" placeholder="e.g. Indomaret, Gojek, Rent"><datalist id="desc-list">${descs.map((d) => `<option value="${esc(d)}">`).join('')}</datalist></label>
+        <div class="field full"><label for="tx-desc">Description</label><div class="ac-wrap"><input type="text" id="tx-desc" name="description" value="${esc(t.description)}" placeholder="e.g. Indomaret, Gojek, Rent" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="desc-ac"><div class="ac-list hidden" id="desc-ac" role="listbox"></div></div></div>
         <label class="field cat-row">Category<select name="categoryId"></select></label>
         <label class="field goal-row">Towards goal<select name="goalId"><option value="">— none —</option>${goals.map((g) => `<option value="${g.id}" ${t.goalId === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>
         <div class="field full who-row"><span>Who</span><div class="seg full" id="person-seg">${PEOPLE.map((p) => `<button type="button" data-p="${p}"><span class="dot" style="background:${pcolor(p)}"></span>${esc(pname(p))}</button>`).join('')}<button type="button" data-p="${SPLIT}"><span class="dot" style="background:${pcolor('junior')}"></span><span class="dot" style="background:${pcolor('sabit')};margin-left:-6px"></span>Split</button></div></div>
@@ -638,6 +645,39 @@ function openTxForm(existing, preset = {}) {
   };
   F('toAccountId').onchange = refresh;
   F('categoryId').onchange = () => { catTouched = true; refresh(); };
+  // description suggestions (own dropdown: the browser's built-in one is unreadable in some Safari setups)
+  const ac = $('#desc-ac', m); const di = F('description');
+  let acItems = [], acIdx = -1;
+  const acClose = () => { ac.classList.add('hidden'); di.setAttribute('aria-expanded', 'false'); acIdx = -1; };
+  const acRender = () => {
+    const q = di.value.trim().toLowerCase();
+    if (!q) { acClose(); return; }
+    const all = [...descInfo.values()].filter((x) => x.text.toLowerCase().includes(q) && x.text.toLowerCase() !== q);
+    all.sort((a, b) => (b.text.toLowerCase().startsWith(q) - a.text.toLowerCase().startsWith(q)) || b.n - a.n);
+    acItems = all.slice(0, 8);
+    if (!acItems.length) { acClose(); return; }
+    acIdx = Math.min(acIdx, acItems.length - 1);
+    const hl = (txt) => { const i = txt.toLowerCase().indexOf(q); return i < 0 ? esc(txt) : `${esc(txt.slice(0, i))}<mark>${esc(txt.slice(i, i + q.length))}</mark>${esc(txt.slice(i + q.length))}`; };
+    ac.innerHTML = acItems.map((x, i) => { const c = store.catMap().get(x.categoryId); return `<div class="ac-item ${i === acIdx ? 'on' : ''}" role="option" aria-selected="${i === acIdx}" data-ac="${i}"><span class="ac-text">${hl(x.text)}</span>${c ? `<span class="ac-meta"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}</span>` : ''}</div>`; }).join('');
+    ac.classList.remove('hidden'); di.setAttribute('aria-expanded', 'true');
+  };
+  const acPick = (i) => {
+    const x = acItems[i]; if (!x) return;
+    di.value = x.text; acClose();
+    di.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  di.addEventListener('input', () => { acIdx = -1; acRender(); });
+  di.addEventListener('focus', acRender);
+  di.addEventListener('blur', () => setTimeout(acClose, 120));
+  di.addEventListener('keydown', (e) => {
+    if (ac.classList.contains('hidden')) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); acIdx = (acIdx + 1) % acItems.length; acRender(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); acIdx = acIdx <= 0 ? acItems.length - 1 : acIdx - 1; acRender(); }
+    else if (e.key === 'Enter' && acIdx >= 0) { e.preventDefault(); e.stopPropagation(); acPick(acIdx); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); acClose(); }
+  });
+  ac.addEventListener('mousedown', (e) => e.preventDefault());
+  ac.addEventListener('click', (e) => { const it = e.target.closest('[data-ac]'); if (it) acPick(+it.dataset.ac); });
   F('description').addEventListener('change', () => {
     if (catTouched || type === 'transfer') return;
     const s = suggestCategory(F('description').value, type === 'income' ? 'income' : 'expense');

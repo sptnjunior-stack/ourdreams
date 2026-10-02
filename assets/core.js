@@ -3,7 +3,7 @@
  * core.js — utilities, icons, data model, store and calculations
  * ===================================================================== */
 
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.3.2';
 const LS = { data: 'cbt.data.v1', cfg: 'cbt.config.v1', ui: 'cbt.ui.v1', sync: 'cbt.sync.v1' };
 
 /* ---------------- utils ---------------- */
@@ -92,7 +92,7 @@ const ICONS = {
   calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
   user: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
   up: '<path d="m18 15-6-6-6 6"/>',
-  grip: '<line x1="5" x2="19" y1="8" y2="8"/><line x1="5" x2="19" y1="12" y2="12"/><line x1="5" x2="19" y1="16" y2="16"/>',
+  grip: '<line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/>',
   flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>',
 };
 function icon(name, cls = '') { return `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`; }
