@@ -406,3 +406,7 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .split-amt { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-2); }
 .split-amt b { font-size: 15px; padding: 7px 0; color: var(--text); font-variant-numeric: tabular-nums; }
 .split-amt input { width: 100%; font-weight: 400; }
+
+.chip-x { background: none; border: 0; padding: 0; margin-left: 2px; cursor: pointer; color: inherit; display: inline-flex; opacity: .7; }
+.chip-x:hover { opacity: 1; }
+.chip-x svg.i { width: 13px; height: 13px; }

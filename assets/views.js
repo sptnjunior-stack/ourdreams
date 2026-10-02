@@ -384,6 +384,9 @@ Views.dashboard.after = () => {
 };
 
 /* ================= SPENDING (transactions) ================= */
+const TX_SORT_LABELS = { date: 'date', description: 'description', category: 'category', person: 'person', amount: 'amount' };
+const TX_DEFAULT = { q: '', type: 'all', account: 'all', sort: 'date', dir: -1 };
+const txViewChanged = () => Object.keys(TX_DEFAULT).some((k) => (ui.tx[k] ?? TX_DEFAULT[k]) !== TX_DEFAULT[k]);
 Views.spending = () => {
   const f = getFilter();
   const q = ui.tx.q.trim().toLowerCase();
@@ -416,6 +419,7 @@ Views.spending = () => {
     <div class="search">${icon('search')}<input type="search" id="tx-q" placeholder="Search description, notes, amount…" value="${esc(ui.tx.q)}"></div>
     <div class="seg">${[['all', 'All'], ['expense', 'Spending'], ['income', 'Income'], ['transfer', 'Transfers']].map(([v, l]) => `<button class="${ui.tx.type === v ? 'on' : ''}" data-action="tx-type" data-v="${v}">${l}</button>`).join('')}</div>
     <select id="tx-acc" title="Account"><option value="all">All accounts</option>${accs.map((a) => `<option value="${a.id}" ${ui.tx.account === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>
+    ${txViewChanged() ? `<button class="btn ghost sm" data-action="tx-reset" title="Back to newest first, all types, all accounts, no search">${icon('x')} Reset view</button>` : ''}
     <span class="grow"></span>
     <button class="btn" data-action="import">${icon('upload')}<span class="hide-sm">Import</span></button>
     <button class="btn" data-action="export-csv">${icon('download')}<span class="hide-sm">Export</span></button>
@@ -429,6 +433,7 @@ Views.spending = () => {
     <button class="btn sm ghost" data-action="bulk-clear">Clear</button></div>` : ''}
   <div class="card">
     <div class="card-head"><h3>${txs.length} transaction${txs.length === 1 ? '' : 's'}</h3>
+      ${ui.tx.sort !== 'date' || ui.tx.dir !== -1 ? `<span class="chip">Sorted by ${TX_SORT_LABELS[ui.tx.sort] || ui.tx.sort} ${ui.tx.dir > 0 ? '▲' : '▼'} <button class="chip-x" data-action="tx-sort-reset" aria-label="Back to newest first" title="Back to newest first">${icon('x')}</button></span>` : ''}
       <span class="sub">Spending <b>${money(S.spend + S.saved)}</b> · Income <b class="good">${money(S.income)}</b> · Net <b class="${S.net < 0 ? 'bad' : 'good'}">${money(S.net)}</b></span></div>
     ${txs.length ? `<div class="table-wrap"><table class="t tx">
       <thead><tr><th class="c" style="width:30px"><input type="checkbox" class="check" data-action="sel-all" ${allSel ? 'checked' : ''} aria-label="Select all"></th>

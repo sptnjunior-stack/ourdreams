@@ -240,6 +240,8 @@ const App = {
       case 'tx-sort': { const k = el.dataset.k; if (ui.tx.sort === k) ui.tx.dir *= -1; else { ui.tx.sort = k; ui.tx.dir = k === 'date' || k === 'amount' ? -1 : 1; } saveUI(); this.render(); break; }
       case 'tx-type': ui.tx.type = v; ui.tx.limit = 100; saveUI(); this.render(); break;
       case 'tx-more': ui.tx.limit += 200; this.render(); break;
+      case 'tx-sort-reset': ui.tx.sort = 'date'; ui.tx.dir = -1; saveUI(); this.render(); break;
+      case 'tx-reset': Object.assign(ui.tx, { q: '', type: 'all', account: 'all', sort: 'date', dir: -1, limit: 100 }); this.sel.clear(); saveUI(); this.render(); break;
       case 'sel': if (el.checked) this.sel.add(id); else this.sel.delete(id); this.render(); break;
       case 'sel-all': {
         const rows = $$('[data-action="sel"]').map((x) => x.dataset.id);
