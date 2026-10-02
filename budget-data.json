@@ -15734,6 +15734,32 @@
    "updatedAt": "2026-10-02T09:55:08.086Z",
    "updatedBy": "junior",
    "createdBy": "junior"
+  },
+  {
+   "id": "t_muqtdbs7clkyar",
+   "type": "expense",
+   "date": "2026-10-02",
+   "amount": 300000,
+   "currency": "IDR",
+   "rate": 1,
+   "description": "",
+   "categoryId": "c_groceries",
+   "person": "split",
+   "splitJunior": 0.8533,
+   "accountId": "a_mupl36tz4lxxbh",
+   "toAccountId": "",
+   "notes": "",
+   "goalId": "",
+   "fee": 0,
+   "flagged": false,
+   "flagNote": "",
+   "flaggedBy": "",
+   "flaggedAt": "",
+   "installment": null,
+   "toAmount": null,
+   "updatedAt": "2026-10-02T10:23:14.441Z",
+   "updatedBy": "junior",
+   "createdBy": "junior"
   }
  ],
  "budgets": [
