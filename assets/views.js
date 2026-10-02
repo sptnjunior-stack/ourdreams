@@ -151,7 +151,6 @@ function enableRowSort(root, onDone) {
       const tbody = row.parentElement; const group = row.dataset.sortGroup || '';
       const before = [...tbody.querySelectorAll('[data-sort-id]')].map((x) => x.dataset.sortId).join();
       row.classList.add('dragging'); document.body.classList.add('is-sorting');
-      try { h.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
       const move = (ev) => {
         if (ev.clientY < 70) window.scrollBy(0, -14); else if (ev.clientY > window.innerHeight - 70) window.scrollBy(0, 14);
         const el = document.elementFromPoint(ev.clientX, ev.clientY);
@@ -160,12 +159,13 @@ function enableRowSort(root, onDone) {
         const r = over.getBoundingClientRect();
         if (ev.clientY < r.top + r.height / 2) tbody.insertBefore(row, over); else tbody.insertBefore(row, over.nextSibling);
       };
+      // listen on window: moving the row in the DOM drops pointer capture, so events must not depend on the handle
       const up = () => {
-        h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
+        window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); window.removeEventListener('blur', up);
         row.classList.remove('dragging'); document.body.classList.remove('is-sorting');
         if ([...tbody.querySelectorAll('[data-sort-id]')].map((x) => x.dataset.sortId).join() !== before) finish(tbody, group);
       };
-      h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+      window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up); window.addEventListener('blur', up);
     });
   });
 }
