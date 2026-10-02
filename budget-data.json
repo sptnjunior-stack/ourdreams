@@ -16682,6 +16682,19 @@
    "deleted": true,
    "updatedAt": "2026-10-01T13:41:34.451Z",
    "updatedBy": "junior"
+  },
+  {
+   "id": "g_muqth424rs4jpl",
+   "name": "Our First 100 Million",
+   "target": 100000000,
+   "targetDate": "2028-01-01",
+   "owner": "shared",
+   "color": "#10b981",
+   "accountId": "",
+   "notes": "",
+   "updatedAt": "2026-10-02T10:26:07.128Z",
+   "updatedBy": "junior",
+   "createdBy": "junior"
   }
  ],
  "contributions": [],
