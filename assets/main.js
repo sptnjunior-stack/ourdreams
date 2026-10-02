@@ -31,6 +31,8 @@ const App = {
       Chart.defaults.font.family = '"Plus Jakarta Sans", system-ui, sans-serif';
     }
     window.addEventListener('hashchange', () => this.onHash());
+    window.addEventListener('error', (ev) => { if (ev && ev.message) toast(`Something went wrong: ${ev.message}`, 'bad'); });
+    window.addEventListener('unhandledrejection', (ev) => { const r = ev && ev.reason; if (r) toast(`Something went wrong: ${r.message || r}`, 'bad'); });
     document.addEventListener('click', (e) => this.onClick(e));
     document.addEventListener('change', (e) => this.onChange(e));
     // leaving an amount field turns 750rb / 1,5jt into 750.000 / 1.500.000
@@ -102,17 +104,19 @@ const App = {
       else if (a.dataset && a.dataset.bud) focusSel = `[data-bud="${a.dataset.bud}"]`;
       try { caret = a.selectionStart; } catch (e) { caret = null; }
     }
-    Charts.destroyAll();
-    this.renderSidebar();
-    this.renderTopbar();
-    const view = Views[ui.page] || Views.dashboard;
-    try {
-      $('#page').innerHTML = view();
-      if (view.after) view.after();
-    } catch (e) {
-      console.error(e);
-      $('#page').innerHTML = `<div class="banner bad">${icon('alert')}<div class="grow">Something went wrong drawing this page: ${esc(e.message)}</div></div>`;
+    try { Charts.destroyAll(); } catch (e) { console.error(e); }
+    const problems = [];
+    try { this.renderSidebar(); } catch (e) { console.error(e); problems.push(['the menu', e]); }
+    try { this.renderTopbar(); } catch (e) {
+      console.error(e); problems.push(['the filter bar', e]);
+      const page = PAGES.find((p) => p[0] === ui.page) || PAGES[0];
+      $('#topbar').innerHTML = `<div class="topbar-row"><button class="btn ghost icon menu-btn" data-action="open-nav" aria-label="Menu">${icon('menu')}</button><h1 class="page-title">${page[1]}</h1></div>`;
     }
+    const view = Views[ui.page] || Views.dashboard;
+    let html = '';
+    try { html = view(); } catch (e) { console.error(e); problems.push(['this page', e]); }
+    $('#page').innerHTML = (problems.length ? errorPanel(problems) : '') + html;
+    try { if (html && view.after) view.after(); } catch (e) { console.error(e); $('#page').insertAdjacentHTML('afterbegin', errorPanel([['the charts', e]])); }
     $('#fab').classList.toggle('hidden', ui.page === 'settings');
     if (this._refocus) { focusSel = this._refocus; this._refocus = null; caret = null; }
     if (focusSel) {
@@ -337,6 +341,7 @@ const App = {
       case 'add-acc': openAccountForm(); break;
       case 'edit-acc': openAccountForm(store.get('accounts', id)); break;
       case 'reconcile': openReconcile(store.get('accounts', id)); break;
+      case 'reset-view': lsDel(LS.ui); location.hash = '#dashboard'; location.reload(); break;
       case 'pay-bill': openPayBill(store.get('accounts', id)); break;
       case 'set-debt-type': {
         const ids = String(id || '').split(',').filter(Boolean);
@@ -395,6 +400,17 @@ const App = {
     }
   },
 };
+
+/* ---------------- error panel ----------------
+ * Shown instead of a blank page if something fails to draw, with the details to send for a fix. */
+function errorPanel(problems) {
+  const detail = problems.map(([where, e]) => `${where}: ${e && e.message}\n${String((e && e.stack) || '').split('\n').slice(0, 4).join('\n')}`).join('\n\n');
+  return `<div class="banner bad err-panel">${icon('alert')}<div class="grow small">
+    <b>Something went wrong drawing ${esc(problems.map((p) => p[0]).join(' and '))}.</b> Your data is safe. Try <b>Reset view</b> first. If it keeps happening, send a screenshot of this box.
+    <pre class="err-detail">${esc(detail)}\nVersion ${APP_VERSION} · ${esc(navigator.userAgent)}</pre>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-action="reset-view">Reset view (keeps your data)</button><button class="btn sm" data-action="export-json">${icon('download')} Download backup</button></div>
+  </div></div>`;
+}
 
 /* ---------------- welcome ---------------- */
 function welcome() {
