@@ -144,8 +144,13 @@ function enableRowSort(root, onDone) {
       App._refocus = `[data-sort-id="${row.dataset.sortId}"] [data-drag]`;
       finish(tbody, group);
     });
+    // mouse & trackpad: native drag-and-drop on the row (armed only while the handle is held)
+    const hrow = h.closest('[data-sort-id]');
+    h.addEventListener('mousedown', () => { if (hrow) hrow.draggable = true; });
+    h.addEventListener('mouseup', () => { if (hrow) hrow.draggable = false; });
+    // touch & pen: pointer events
     h.addEventListener('pointerdown', (e) => {
-      if (e.button !== undefined && e.button !== 0) return;
+      if (e.pointerType === 'mouse' || (e.button !== undefined && e.button !== 0)) return;
       const row = h.closest('[data-sort-id]'); if (!row) return;
       e.preventDefault();
       const tbody = row.parentElement; const group = row.dataset.sortGroup || '';
@@ -168,8 +173,35 @@ function enableRowSort(root, onDone) {
       window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up); window.addEventListener('blur', up);
     });
   });
+  let dragRow = null, dragBefore = '';
+  const sameList = (row) => dragRow && row !== dragRow && row.parentElement === dragRow.parentElement && (row.dataset.sortGroup || '') === (dragRow.dataset.sortGroup || '');
+  root.querySelectorAll('[data-sort-id]').forEach((row) => {
+    row.addEventListener('dragstart', (e) => {
+      if (!row.draggable) { e.preventDefault(); return; }
+      dragRow = row; dragBefore = [...row.parentElement.querySelectorAll('[data-sort-id]')].map((x) => x.dataset.sortId).join();
+      try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', row.dataset.sortId); } catch (err) { /* ignore */ }
+      setTimeout(() => row.classList.add('dragging'), 0);
+    });
+    row.addEventListener('dragover', (e) => {
+      if (!dragRow) return;
+      e.preventDefault();
+      try { e.dataTransfer.dropEffect = 'move'; } catch (err) { /* ignore */ }
+      if (!sameList(row)) return;
+      const r = row.getBoundingClientRect(); const tbody = row.parentElement;
+      if (e.clientY < r.top + r.height / 2) { if (row.previousElementSibling !== dragRow) tbody.insertBefore(dragRow, row); }
+      else if (row.nextElementSibling !== dragRow) tbody.insertBefore(dragRow, row.nextSibling);
+    });
+    row.addEventListener('drop', (e) => { if (dragRow) e.preventDefault(); });
+    row.addEventListener('dragend', () => {
+      const r0 = dragRow; dragRow = null; row.draggable = false;
+      if (!r0) return;
+      r0.classList.remove('dragging');
+      const tbody = r0.parentElement; const group = r0.dataset.sortGroup || '';
+      if ([...tbody.querySelectorAll('[data-sort-id]')].map((x) => x.dataset.sortId).join() !== dragBefore) finish(tbody, group);
+    });
+  });
 }
-const dragHandle = (label) => `<button type="button" class="drag-handle" data-drag aria-label="Drag to reorder ${esc(label)}" title="Drag to reorder (or use ↑ ↓ keys)">${icon('grip')}</button>`;
+const dragHandle = (label) => `<span class="drag-handle" role="button" tabindex="0" data-drag aria-label="Drag to reorder ${esc(label)}" title="Drag to reorder (or click it and use ↑ ↓ keys)">${icon('grip')}</span>`;
 
 const Views = {};
 

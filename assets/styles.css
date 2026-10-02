@@ -452,3 +452,7 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 tr.dragging td { background: var(--primary-soft) !important; }
 tr.dragging .drag-handle { cursor: grabbing; opacity: 1; color: var(--primary); }
 body.is-sorting, body.is-sorting * { cursor: grabbing !important; user-select: none !important; -webkit-user-select: none !important; }
+
+.drag-handle { user-select: none; -webkit-user-select: none; }
+.drag-handle svg { pointer-events: none; }
+tr[draggable="true"] { -webkit-user-drag: element; }
