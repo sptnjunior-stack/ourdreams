@@ -126,6 +126,7 @@ const App = {
       ${PAGES.map(([id, label, ic]) => `<a class="nav-item ${ui.page === id ? 'active' : ''}" href="#${id}">${icon(ic)}${label}</a>`).join('')}
       <div class="sidebar-foot">
         ${sync.pillHTML()}
+        <div class="small muted" title="App version: check this after uploading new files">Version ${APP_VERSION}</div>
         <div class="me-switch">Using this device
           <div class="seg full">${['junior', 'sabit'].map((p) => `<button class="${me() === p ? 'on' : ''}" data-action="set-me" data-v="${p}"><span class="dot" style="background:${pcolor(p)}"></span>${esc(pname(p))}</button>`).join('')}</div>
         </div>
