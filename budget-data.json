@@ -20092,6 +20092,34 @@
    "updatedAt": "2026-10-03T03:54:41.460Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "t_murwgolab01q6c",
+   "type": "expense",
+   "date": "2026-10-03",
+   "amount": 3285149,
+   "currency": "IDR",
+   "rate": 1,
+   "description": "Tiket Konser Doh Kyungsoo",
+   "categoryId": "c_entertainment",
+   "person": "sabit",
+   "accountId": "a_murqr4q912ic9k",
+   "toAccountId": "",
+   "notes": "",
+   "goalId": "",
+   "fee": 0,
+   "flagged": true,
+   "flagNote": "Check amount",
+   "flaggedBy": "sabit",
+   "flaggedAt": "2026-10-03T04:40:22.561Z",
+   "installment": {
+    "months": 3,
+    "interest": 0
+   },
+   "toAmount": null,
+   "updatedAt": "2026-10-03T04:40:22.562Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "budgets": [
