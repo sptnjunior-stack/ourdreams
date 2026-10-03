@@ -21200,6 +21200,16 @@
    "updatedAt": "2026-10-02T05:16:21.489Z",
    "updatedBy": "junior",
    "createdBy": "junior"
+  },
+  {
+   "id": "b_2026-09_c_housing-rent_sabit",
+   "month": "2026-09",
+   "categoryId": "c_housing-rent",
+   "person": "sabit",
+   "amount": 1900000,
+   "updatedAt": "2026-10-03T05:07:25.823Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "goals": [
