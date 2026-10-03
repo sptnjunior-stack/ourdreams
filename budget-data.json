@@ -20368,7 +20368,7 @@
   {
    "id": "t_mus1c28g6oejuj",
    "type": "expense",
-   "date": "2026-10-03",
+   "date": "2026-10-02",
    "amount": 9000,
    "currency": "IDR",
    "rate": 1,
@@ -20388,7 +20388,7 @@
    "installment": null,
    "repeat": null,
    "toAmount": null,
-   "updatedAt": "2026-10-03T06:53:14.171Z",
+   "updatedAt": "2026-10-03T06:53:23.203Z",
    "updatedBy": "junior",
    "createdBy": "junior"
   }
