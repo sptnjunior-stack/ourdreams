@@ -615,7 +615,7 @@
   },
   {
    "id": "a_murqwosmulou33",
-   "name": "BRI TOKOPED CC",
+   "name": "BRI Tokopedia CC",
    "type": "credit",
    "owner": "sabit",
    "currency": "IDR",
@@ -625,7 +625,7 @@
    "limit": 3000000,
    "closingDay": 15,
    "dueDay": 1,
-   "updatedAt": "2026-10-03T02:06:05.964Z",
+   "updatedAt": "2026-10-03T02:06:19.649Z",
    "updatedBy": "junior",
    "createdBy": "sabit",
    "order": 6
