@@ -530,7 +530,7 @@
   },
   {
    "id": "a_muqfdz6oe01kzn",
-   "name": "OVO",
+   "name": "OVO Sabit",
    "type": "ewallet",
    "owner": "sabit",
    "currency": "IDR",
@@ -540,7 +540,7 @@
    "limit": "",
    "closingDay": "",
    "dueDay": "",
-   "updatedAt": "2026-10-03T02:05:52.800Z",
+   "updatedAt": "2026-10-03T06:14:05.620Z",
    "updatedBy": "junior",
    "createdBy": "junior",
    "order": 4
