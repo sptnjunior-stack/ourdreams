@@ -20125,12 +20125,12 @@
  "budgets": [
   {
    "id": "b_2026-09_c_salary_junior",
-   "updatedAt": "2026-10-02T05:12:36.288Z",
+   "updatedAt": "2026-10-03T04:46:03.523Z",
    "updatedBy": "junior",
    "month": "2026-09",
    "categoryId": "c_salary",
    "person": "junior",
-   "amount": 32640211
+   "amount": 30491851
   },
   {
    "id": "b_2026-09_c_salary_sabit",
