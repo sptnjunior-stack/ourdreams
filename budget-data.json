@@ -20391,6 +20391,33 @@
    "updatedAt": "2026-10-03T06:53:23.203Z",
    "updatedBy": "junior",
    "createdBy": "junior"
+  },
+  {
+   "id": "t_mus1col2kzgkdx",
+   "type": "expense",
+   "date": "2026-10-03",
+   "amount": 69220,
+   "currency": "IDR",
+   "rate": 1,
+   "description": "Grab - Ayam Geprek",
+   "categoryId": "c_transport",
+   "person": "junior",
+   "accountId": "a_mupl4u20gb41in",
+   "toAccountId": "",
+   "notes": "",
+   "goalId": "",
+   "fee": 0,
+   "payback": false,
+   "flagged": false,
+   "flagNote": "",
+   "flaggedBy": "",
+   "flaggedAt": "",
+   "installment": null,
+   "repeat": null,
+   "toAmount": null,
+   "updatedAt": "2026-10-03T06:53:48.154Z",
+   "updatedBy": "junior",
+   "createdBy": "junior"
   }
  ],
  "budgets": [
