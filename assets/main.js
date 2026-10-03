@@ -342,6 +342,24 @@ const App = {
       case 'add-acc': openAccountForm(); break;
       case 'edit-acc': openAccountForm(store.get('accounts', id)); break;
       case 'reconcile': openReconcile(store.get('accounts', id)); break;
+      case 'record-repeat': {
+        const tpl = store.get('transactions', id); if (!tpl) return;
+        const ym = el.dataset.ym;
+        const keep = ['type', 'amount', 'currency', 'rate', 'description', 'categoryId', 'person', 'splitJunior', 'accountId', 'toAccountId', 'toAmount', 'payback', 'fee', 'goalId', 'notes'];
+        const preset = {}; keep.forEach((k) => { if (tpl[k] !== undefined) preset[k] = tpl[k]; });
+        const today = todayStr();
+        preset.date = ym === today.slice(0, 7) ? today : dayInMonth(ym, Number(tpl.repeat.day) || 1);
+        preset.repeatOf = tpl.id; preset.repeatMonth = ym;
+        openTxForm(null, preset);
+        break;
+      }
+      case 'skip-repeat': {
+        const tpl = store.get('transactions', id); if (!tpl) return;
+        const ym = el.dataset.ym;
+        store.upsert('transactions', { ...tpl, repeat: { ...tpl.repeat, skips: [...new Set([...(tpl.repeat.skips || []), ym])] } });
+        toast(`Skipped for ${fmtMonth(ym, true)}.`);
+        break;
+      }
       case 'reset-view': lsDel(LS.ui); location.hash = '#dashboard'; location.reload(); break;
       case 'pay-bill': openPayBill(store.get('accounts', id)); break;
       case 'set-debt-type': {
@@ -481,7 +499,7 @@ function openTxForm(existing, preset = {}) {
           </div></div>`}
         <label class="field full rate-row">Exchange rate<div style="display:flex;gap:8px;align-items:center"><span class="muted nowrap" id="rate-label">1 ${t.currency} = Rp</span><input type="text" name="rate" inputmode="decimal" value="${fmtInput(t.rate || rateOf(t.currency), 'USD')}" style="flex:1"></div><span class="hint">Saved with this transaction. Default comes from Settings.</span></label>
         <div class="field full"><label for="tx-desc">Description</label><div class="ac-wrap"><input type="text" id="tx-desc" name="description" value="${esc(t.description)}" placeholder="e.g. Indomaret, Gojek, Rent" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="desc-ac"><div class="ac-list hidden" id="desc-ac" role="listbox"></div></div></div>
-        <label class="field cat-row">Category<select name="categoryId"></select></label>
+        <label class="field cat-row"><span id="cat-label">Category</span><select name="categoryId"></select><span class="hint cat-hint hidden">A label only: transfers aren't counted as spending or income.</span></label>
         <label class="field goal-row">Towards goal<select name="goalId"><option value="">— none —</option>${goals.map((g) => `<option value="${g.id}" ${t.goalId === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>
         <div class="field full who-row"><span>Who</span><div class="seg full" id="person-seg">${PEOPLE.map((p) => `<button type="button" data-p="${p}"><span class="dot" style="background:${pcolor(p)}"></span>${esc(pname(p))}</button>`).join('')}<button type="button" data-p="${SPLIT}"><span class="dot" style="background:${pcolor('junior')}"></span><span class="dot" style="background:${pcolor('sabit')};margin-left:-6px"></span>Split</button></div></div>
         <div class="field full split-row">
@@ -491,6 +509,10 @@ function openTxForm(existing, preset = {}) {
             <div class="split-amt"><span><span class="dot" style="background:${pcolor('sabit')}"></span>${esc(pname('sabit'))}'s share</span><b id="share-sabit">–</b></div>
           </div>
           <span class="hint">Each share counts toward that person's budget and reports. "Paid from" is the account the money actually left.</span>
+        </div>
+        <div class="field full payback-row">
+          <label class="check"><input type="checkbox" name="payback" ${t.payback ? 'checked' : ''}> ${icon('transfer')} <span id="payback-label">Paying back partner</span></label>
+          <span class="hint" id="payback-hint"></span>
         </div>
         <label class="field acc-row"><span id="acc-label">Paid from</span><select name="accountId">${accOpts(t.accountId)}</select></label>
         <label class="field to-row"><span id="to-label">To account</span><select name="toAccountId">${accOpts(t.toAccountId)}</select></label>
@@ -506,6 +528,10 @@ function openTxForm(existing, preset = {}) {
         <div class="field full inst-hint hidden"><div class="banner info" style="margin:0">${icon('info')}<div class="grow small"><span id="inst-hint-text"></span></div><button type="button" class="btn sm" data-fix-debt>Set as card</button></div></div>
         <label class="field to-amt-row">Amount received<input type="text" name="toAmount" inputmode="decimal" value="${t.toAmount != null && t.toAmount !== '' ? fmtInput(t.toAmount, 'USD') : ''}" placeholder="only if currencies differ"></label>
         <label class="field full">Notes<textarea name="notes" rows="2" placeholder="Optional">${esc(t.notes)}</textarea></label>
+        <div class="field full repeat-field">
+          ${t.repeatOf ? `<span class="hint">${icon('repeat')} Monthly repeat${(() => { const tp = store.get('transactions', t.repeatOf); return tp ? ` of “${esc(tp.description || 'transaction')}”` : ''; })()} · ${esc(fmtMonth(t.repeatMonth || t.date.slice(0, 7), true))}</span>`
+    : `<label class="check"><input type="checkbox" name="repeat" ${t.repeat ? 'checked' : ''}> ${icon('repeat')} <span id="repeat-label">Repeats every month</span></label>`}
+        </div>
         <div class="field full flag-field">
           <label class="check"><input type="checkbox" name="flagged" ${t.flagged ? 'checked' : ''}> ${icon('flag')} Flag for follow-up</label>
           <div class="flag-extra ${t.flagged ? '' : 'hidden'}">
@@ -551,12 +577,24 @@ function openTxForm(existing, preset = {}) {
     show('.rate-row', cur !== 'IDR');
     $('#rate-label', m).textContent = `1 ${cur} = Rp`;
     const isTr = type === 'transfer', isAdj = type === 'adjustment';
-    show('.cat-row', !isTr && !isAdj);
+    show('.cat-row', !isAdj);
+    $('#cat-label', m).textContent = isTr ? 'Category (optional)' : 'Category';
+    show('.cat-hint', isTr);
     const sav = savingsCat();
-    show('.to-row', isTr || sav);
-    $('#to-label', m).textContent = isTr ? 'To account' : 'Moved into (optional)';
+    const pbOk = type === 'expense' && (person === 'junior' || person === 'sabit');
+    show('.payback-row', pbOk);
+    const pb = pbOk && F('payback').checked;
+    const partner = partnerOf(person);
+    if (pbOk) {
+      $('#payback-label', m).textContent = `${pname(person)} is paying back ${pname(partner)}`;
+      const cat = store.catMap().get(F('categoryId').value);
+      $('#payback-hint', m).innerHTML = pb ? `Counts as <b>${esc(pname(person))}'s</b> ${cat ? esc(cat.name) : 'spending'} and lowers <b>${esc(pname(partner))}'s</b> by the same amount. Choose ${esc(pname(partner))}'s account below.` : `Tick this when ${esc(pname(person))} pays ${esc(pname(partner))} back for something ${esc(pname(partner))} already paid (e.g. a share of the rent).`;
+      if (pb && !F('toAccountId').value) { const acc = store.all('accounts').find((a) => a.owner === partner && !a.archived && !isDebtAcc(a)); if (acc) F('toAccountId').value = acc.id; }
+    }
+    show('.to-row', isTr || sav || pb);
+    $('#to-label', m).textContent = isTr ? 'To account' : pb ? `Into ${pname(partner)}'s account` : 'Moved into (optional)';
     const fromAcc = store.get('accounts', F('accountId').value), toAcc = store.get('accounts', F('toAccountId').value);
-    show('.to-amt-row', (isTr || sav) && !!fromAcc && !!toAcc && toAcc.currency !== cur);
+    show('.to-amt-row', (isTr || sav || (type === 'expense' && F('payback').checked && (person === 'junior' || person === 'sabit'))) && !!fromAcc && !!toAcc && toAcc.currency !== cur);
     $('#acc-label', m).textContent = isTr ? 'From account' : type === 'income' ? 'Received into' : isAdj ? 'Account' : 'Paid from';
     show('.goal-row', goals.length && !isTr && type !== 'income' && (sav || !!F('goalId').value));
     show('.split-row', person === SPLIT && !isTr && !isAdj);
@@ -582,7 +620,7 @@ function openTxForm(existing, preset = {}) {
     }
     if (person === SPLIT) updateShares(document.activeElement === F('shareJunior'));
     // installments: only for spending paid with a credit card / paylater
-    const instOk = type === 'expense' && isDebtAcc(fromAcc);
+    const instOk = type === 'expense' && isDebtAcc(fromAcc) && !pb;
     show('.inst-row', instOk);
     const hintOn = type === 'expense' && looksLikeDebt(fromAcc);
     show('.inst-hint', hintOn);
@@ -602,6 +640,9 @@ function openTxForm(existing, preset = {}) {
   };
   fillCats(); refresh();
   F('flagged').addEventListener('change', () => { show('.flag-extra', F('flagged').checked); });
+  F('payback').addEventListener('change', refresh);
+  const repeatLabel = () => { const el = $('#repeat-label', m); if (el) el.textContent = `Repeats every month${F('date').value ? ` (reminder on day ${Number(F('date').value.slice(8, 10))})` : ''}`; };
+  repeatLabel(); F('date').addEventListener('change', repeatLabel);
   m.querySelectorAll('[data-flagreason]').forEach((b) => b.onclick = () => { F('flagNote').value = b.dataset.flagreason; });
   m.querySelectorAll('[data-t]').forEach((b) => b.onclick = () => {
     type = b.dataset.t; m.querySelectorAll('[data-t]').forEach((x) => x.classList.toggle('on', x === b));
@@ -680,7 +721,7 @@ function openTxForm(existing, preset = {}) {
   ac.addEventListener('mousedown', (e) => e.preventDefault());
   ac.addEventListener('click', (e) => { const it = e.target.closest('[data-ac]'); if (it) acPick(+it.dataset.ac); });
   F('description').addEventListener('change', () => {
-    if (catTouched || type === 'transfer') return;
+    if (catTouched) return;
     const s = suggestCategory(F('description').value, type === 'income' ? 'income' : 'expense');
     if (s) { F('categoryId').value = s; refresh(); }
   });
@@ -703,8 +744,9 @@ function openTxForm(existing, preset = {}) {
     const rec = {
       ...t, type, amount, currency: cur, rate, date: F('date').value, description: F('description').value.trim(),
       person: type === 'transfer' || type === 'adjustment' ? (person === SPLIT ? me() : person) : person,
-      categoryId: type === 'transfer' || type === 'adjustment' ? '' : F('categoryId').value, accountId: F('accountId').value,
+      categoryId: type === 'adjustment' ? '' : F('categoryId').value, accountId: F('accountId').value,
       toAccountId: toVisible ? F('toAccountId').value : '', notes: F('notes').value.trim(),
+      payback: type === 'expense' && (person === 'junior' || person === 'sabit') && F('payback').checked,
       flagged: F('flagged').checked,
       flagNote: F('flagged').checked ? F('flagNote').value.trim() : '',
       flaggedBy: F('flagged').checked ? (t.flagged ? t.flaggedBy || me() : me()) : '',
@@ -721,6 +763,8 @@ function openTxForm(existing, preset = {}) {
     } else rec.installment = null;
     if (rec.person === SPLIT) rec.splitJunior = Math.round(ratio * 10000) / 10000; else delete rec.splitJunior;
     const toAmt = F('toAmount').value.trim();
+    if (rec.payback && !rec.toAccountId) { toast(`Choose ${pname(partnerOf(rec.person))}'s account the money goes into.`, 'bad'); return null; }
+    if (F('repeat')) rec.repeat = F('repeat').checked && type !== 'adjustment' ? { every: 'month', day: Number(rec.date.slice(8, 10)), skips: (t.repeat && t.repeat.skips) || [] } : null;
     rec.toAmount = toVisible && toAmt && !m.querySelector('.to-amt-row').classList.contains('hidden') ? parseAmount(toAmt) : null;
     if (type === 'transfer') {
       if (!rec.accountId || !rec.toAccountId) { toast('Choose both accounts for a transfer.', 'bad'); return null; }

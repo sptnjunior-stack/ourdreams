@@ -120,10 +120,10 @@ function txTitle(t) {
 }
 function txCatCell(t) {
   if (t.type === 'transfer') {
-    const a = store.accMap(); return `<span class="chip">${icon('transfer')} ${esc((a.get(t.accountId) || {}).name || '?')} → ${esc((a.get(t.toAccountId) || {}).name || '?')}</span>`;
+    const a = store.accMap(); return `${t.categoryId && store.catMap().get(t.categoryId) ? `${catChip(t.categoryId)} ` : ''}<span class="chip">${icon('transfer')} ${esc((a.get(t.accountId) || {}).name || '?')} → ${esc((a.get(t.toAccountId) || {}).name || '?')}</span>`;
   }
   if (t.type === 'adjustment') return `<span class="chip">${icon('scale')} Adjustment</span>`;
-  if (t.type === 'expense' && t.toAccountId) { const a = store.accMap().get(t.toAccountId); if (a) return `${catChip(t.categoryId)} <span class="chip">→ ${esc(a.name)}</span>`; }
+  if (t.type === 'expense' && t.toAccountId) { const a = store.accMap().get(t.toAccountId); if (a) return `${catChip(t.categoryId)} <span class="chip">${isPayback(t) ? 'paid back →' : '→'} ${esc(a.name)}</span>`; }
   return catChip(t.categoryId);
 }
 
@@ -320,6 +320,7 @@ Views.dashboard = () => {
     return `<div class="banner bad">${icon('cloudOff')}<div class="grow small"><b>This device isn't connected to GitHub.</b> Everything entered here is saved only in this browser, so ${esc(pname(me() === 'junior' ? 'sabit' : 'junior'))} can't see it, and clearing the browser would erase it.${backupOld ? ` ${lb ? `Last backup: ${relTime(cfg.lastBackup)}.` : 'No backup yet.'}` : ''}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap"><a class="btn sm primary" href="#settings">Connect</a>${backupOld ? `<button class="btn sm" data-action="export-json">${icon('download')} Backup</button>` : ''}<button class="btn sm ghost" data-action="local-snooze">Tomorrow</button></div></div>`;
   })()}
+  ${repeatDue().map(({ tpl, ym, due, days }) => `<div class="banner info repeat-banner">${icon('repeat')}<div class="grow small"><b>${esc(tpl.description || (catOf(tpl) || {}).name || 'Monthly item')}</b> · ${money(txBase(tpl))}${isPayback(tpl) ? ` · ${esc(pname(tpl.person))} → ${esc(pname(partnerOf(tpl.person)))}` : ''} ${days < 0 ? `was due ${fmtDate(due)}` : days === 0 ? 'is due today' : `is due ${fmtDate(due)}`}</div><button class="btn sm ghost" data-action="skip-repeat" data-id="${tpl.id}" data-ym="${ym}">Skip ${esc(fmtMonth(ym))}</button><button class="btn sm primary" data-action="record-repeat" data-id="${tpl.id}" data-ym="${ym}">Record</button></div>`).join('')}
   ${cardReminders().map(({ a, st, days }) => `<div class="banner ${days < 0 ? 'bad' : ''} card-banner">${icon('wallet')}<div class="grow small"><b>${esc(a.name)} bill ${fmt(st.due, a.currency)}</b> ${days < 0 ? `was due ${fmtDate(st.dueDate)} (${-days} day${days === -1 ? '' : 's'} ago)` : days === 0 ? 'is due today' : `is due ${fmtDate(st.dueDate)} (in ${days} day${days === 1 ? '' : 's'})`} · statement ${fmtDate(st.from, false)} – ${fmtDate(st.close, false)}</div><button class="btn sm" data-action="statement" data-id="${a.id}">Statement</button><button class="btn sm primary" data-action="pay-bill" data-id="${a.id}">Pay bill</button></div>`).join('')}
   ${(() => { const fl = flaggedTx(); return fl.length ? `<div class="banner flag-banner">${icon('flag')}<div class="grow small"><b>${fl.length} transaction${fl.length === 1 ? '' : 's'} flagged for follow-up</b> · ${fl.slice(0, 3).map((t) => `${txTitle(t)}${t.flagNote ? ` (${esc(t.flagNote)})` : ''}`).join(', ')}${fl.length > 3 ? '…' : ''}</div><button class="btn sm" data-action="review-flags">Review</button></div>` : ''; })()}
   <div class="grid kpis">
@@ -537,7 +538,7 @@ Views.spending = () => {
       <tbody>${shown.map((t) => `<tr class="${sel.has(t.id) ? 'sel' : ''}">
         <td class="c cb"><input type="checkbox" class="check" data-action="sel" data-id="${t.id}" ${sel.has(t.id) ? 'checked' : ''} aria-label="Select"></td>
         <td class="nowrap d-date">${fmtDate(t.date)}</td>
-        <td class="d-desc" data-action="edit-tx" data-id="${t.id}" style="cursor:pointer"><div class="desc">${txTitle(t)}</div>${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ''}${flagLine(t)}</td>
+        <td class="d-desc" data-action="edit-tx" data-id="${t.id}" style="cursor:pointer"><div class="desc">${txTitle(t)}${t.repeat && !t.repeatOf ? ` <span class="badge" title="Repeats every month">${icon('repeat')} monthly</span>` : t.repeatOf ? ` <span class="badge" title="Recorded from a monthly repeat">${icon('repeat')}</span>` : ''}</div>${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ''}${flagLine(t)}</td>
         <td class="d-cat">${txCatCell(t)}</td>
         <td class="d-person">${txPersonChip(t)}</td>
         <td class="d-acc small muted">${esc((store.accMap().get(t.accountId) || {}).name || '')}</td>

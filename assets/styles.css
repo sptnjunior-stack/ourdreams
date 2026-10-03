@@ -470,3 +470,9 @@ tr[draggable="true"] { -webkit-user-drag: element; }
 .ac-item mark { background: none; color: var(--primary); font-weight: 700; }
 .ac-item .ac-meta { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .drag-handle { opacity: .75; color: var(--text-2); }
+
+/* ---------- payback & repeats ---------- */
+.payback-row, .repeat-field { gap: 4px; }
+.payback-row .check svg.i, .repeat-field svg.i { width: 15px; height: 15px; color: var(--primary); }
+.badge svg.i { width: 11px; height: 11px; vertical-align: -1px; }
+.repeat-banner { align-items: center; flex-wrap: wrap; }

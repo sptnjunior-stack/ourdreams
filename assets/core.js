@@ -3,7 +3,7 @@
  * core.js — utilities, icons, data model, store and calculations
  * ===================================================================== */
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 const LS = { data: 'cbt.data.v1', cfg: 'cbt.config.v1', ui: 'cbt.ui.v1', sync: 'cbt.sync.v1' };
 
 /* ---------------- utils ---------------- */
@@ -109,6 +109,7 @@ const ICONS = {
   calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
   user: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
   up: '<path d="m18 15-6-6-6 6"/>',
+  repeat: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
   grip: '<line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/>',
   flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>',
 };
@@ -449,6 +450,7 @@ function flagLine(t) {
   return `<div class="flag-note">${icon('flag')}<span>${t.flagNote ? esc(t.flagNote) : 'Flagged for follow-up'} · ${esc(pname(t.flaggedBy))}${t.flaggedAt ? `, ${fmtDate(t.flaggedAt.slice(0, 10), false)}` : ''}</span></div>`;
 }
 function txPersonChip(t) {
+  if (t.payback && t.type === 'expense' && partnerOf(t.person)) return `<span class="chip" title="${esc(pname(t.person))} pays back ${esc(pname(partnerOf(t.person)))}"><span class="dot" style="background:${pcolor(t.person)}"></span>${esc(pname(t.person))} → ${esc(pname(partnerOf(t.person)))}</span>`;
   if (!isSplit(t)) return personChip(t.person);
   return `<span class="chip" title="${esc(pname('junior'))} ${Math.round(shareOf(t, 'junior') * 100)}% · ${esc(pname('sabit'))} ${Math.round(shareOf(t, 'sabit') * 100)}%"><span class="dot" style="background:${pcolor('junior')}"></span><span class="dot" style="background:${pcolor('sabit')};margin-left:-4px"></span>Split ${splitLabel(t)}</span>`;
 }
@@ -485,6 +487,11 @@ function shareOf(t, p) {
   return t.person === p ? 1 : 0;
 }
 const isSplit = (t) => t.person === SPLIT || t.person === 'shared';
+const partnerOf = (p) => (p === 'junior' ? 'sabit' : p === 'sabit' ? 'junior' : '');
+/** "Paying back partner": t.person pays their share of something the partner paid for earlier.
+ * It's the payer's spending and lowers the partner's spending in the same category (a refund),
+ * while the money moves from t.accountId to the partner's account t.toAccountId. */
+const isPayback = (t) => !!t.payback && t.type === 'expense' && !isSplit(t) && !!partnerOf(t.person);
 const feeAbs = (t) => Math.abs(Number(t.fee) || 0);
 const toIDR = (t, v) => (!t.currency || t.currency === 'IDR' ? v : Math.round(v * (Number(t.rate) || rateOf(t.currency))));
 /** The amount that is the actual purchase / income / transfer, without the fee (in the tx currency). */
@@ -533,7 +540,10 @@ function linesOf(t) {
       if (n) {
         dates.forEach((dt, k) => out.push({ t, date: dt, type: 'expense', categoryId: t.categoryId, person: p, v: toIDR(t, instPortion(t, k)) * s, fixed: true, inst: k + 1 }));
         if (intr) dates.forEach((dt) => out.push({ t, date: dt, type: 'expense', categoryId: feeCat, person: p, v: intr * s, fee: true, fixed: true }));
-      } else out.push({ t, date: t.date, type: t.type, categoryId: t.categoryId, person: p, v: p0 * s });
+      } else {
+        out.push({ t, date: t.date, type: t.type, categoryId: t.categoryId, person: p, v: p0 * s });
+        if (isPayback(t)) out.push({ t, date: t.date, type: 'expense', categoryId: t.categoryId, person: partnerOf(p), v: -p0, payback: true });
+      }
     }
     if (fee) out.push({ t, date: t.date, type: 'expense', categoryId: feeCat, person: p, v: fee * s, fee: true });
   }
@@ -604,7 +614,7 @@ function txMatches(t, f, { ignoreDate = false, ignorePerson = false, ignoreCats 
   if (!ignoreCats && f.cats) {
     const feeHit = feeAbs(t) && f.cats.has(store.catMap().has(FEE_CAT) ? FEE_CAT : 'c_other');
     if (!feeHit) {
-      if (t.type !== 'expense' && t.type !== 'income') return false;
+      if (t.type !== 'expense' && t.type !== 'income' && !(t.type === 'transfer' && t.categoryId)) return false;
       if (!f.cats.has(t.categoryId)) return false;
     }
   }
@@ -766,6 +776,29 @@ function unbilledInstallments(acc, ref = todayStr()) {
   }
   return v;
 }
+/* ---- monthly repeats ----
+ * A transaction with t.repeat = { every: 'month', day, skips: [YYYY-MM] } is a template.
+ * Each month you record it with one tap; the copy keeps t.repeatOf (template id) and t.repeatMonth. */
+const repeatTemplates = () => store.activeTx().filter((t) => t.repeat && t.repeat.every === 'month' && !t.repeatOf);
+function repeatOccurrence(tpl, ym) {
+  if (tpl.date.slice(0, 7) === ym) return tpl;
+  return store.activeTx().find((x) => x.repeatOf === tpl.id && x.repeatMonth === ym) || null;
+}
+function repeatDue(ref = todayStr(), daysAhead = 3) {
+  const out = [];
+  for (const tpl of repeatTemplates()) {
+    for (const ym of [addMonths(ref.slice(0, 7), -1), ref.slice(0, 7)]) {
+      if (ym <= tpl.date.slice(0, 7)) continue;
+      if ((tpl.repeat.skips || []).includes(ym)) continue;
+      if (repeatOccurrence(tpl, ym)) continue;
+      const due = dayInMonth(ym, Number(tpl.repeat.day) || Number(tpl.date.slice(8, 10)));
+      const days = daysBetween(ref, due);
+      if (days <= daysAhead) out.push({ tpl, ym, due, days });
+    }
+  }
+  return out.sort((a, b) => a.due.localeCompare(b.due));
+}
+
 /** Cards with a bill due soon (or overdue) that isn't fully paid yet. */
 function cardReminders(ref = todayStr(), daysAhead = 7) {
   const out = [];
