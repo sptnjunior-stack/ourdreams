@@ -20016,6 +20016,31 @@
    "updatedAt": "2026-10-03T03:29:02.191Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "t_muru1w95z56lje",
+   "type": "expense",
+   "date": "2026-09-25",
+   "amount": 36000,
+   "currency": "IDR",
+   "rate": 1,
+   "description": "Sate Kambing",
+   "categoryId": "c_dining-coffee",
+   "person": "sabit",
+   "accountId": "a_murqr4q912ic9k",
+   "toAccountId": "",
+   "notes": "",
+   "goalId": "",
+   "fee": 0,
+   "flagged": false,
+   "flagNote": "",
+   "flaggedBy": "",
+   "flaggedAt": "",
+   "installment": null,
+   "toAmount": null,
+   "updatedAt": "2026-10-03T03:31:10.592Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "budgets": [
