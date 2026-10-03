@@ -19957,6 +19957,31 @@
    "updatedAt": "2026-10-03T02:14:10.182Z",
    "updatedBy": "junior",
    "createdBy": "junior"
+  },
+  {
+   "id": "t_murtx4j9i74536",
+   "type": "expense",
+   "date": "2026-09-26",
+   "amount": 91636,
+   "currency": "IDR",
+   "rate": 1,
+   "description": "Salad Point",
+   "categoryId": "c_dining-coffee",
+   "person": "sabit",
+   "accountId": "a_murr0e3hnvl6dm",
+   "toAccountId": "",
+   "notes": "",
+   "goalId": "",
+   "fee": 0,
+   "flagged": false,
+   "flagNote": "",
+   "flaggedBy": "",
+   "flaggedAt": "",
+   "installment": null,
+   "toAmount": null,
+   "updatedAt": "2026-10-03T03:26:49.171Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "budgets": [
