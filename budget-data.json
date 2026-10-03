@@ -20253,12 +20253,12 @@
   },
   {
    "id": "b_2026-10_c_salary_junior",
-   "updatedAt": "2026-10-03T04:46:20.858Z",
+   "updatedAt": "2026-10-03T04:46:24.188Z",
    "updatedBy": "junior",
    "month": "2026-10",
    "categoryId": "c_salary",
    "person": "junior",
-   "amount": 30
+   "amount": 30000000
   },
   {
    "id": "b_2026-10_c_salary_sabit",
