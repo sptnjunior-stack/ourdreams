@@ -14940,7 +14940,7 @@
    "id": "t_muq7co09ukebi7",
    "type": "income",
    "date": "2026-07-24",
-   "amount": 30491851,
+   "amount": 31779715,
    "currency": "IDR",
    "rate": 1,
    "description": "Monthly Salary",
@@ -14952,9 +14952,14 @@
    "goalId": "",
    "fee": 0,
    "toAmount": null,
-   "updatedAt": "2026-10-02T00:06:13.050Z",
+   "updatedAt": "2026-10-03T04:47:59.000Z",
    "updatedBy": "junior",
-   "createdBy": "junior"
+   "createdBy": "junior",
+   "flagged": false,
+   "flagNote": "",
+   "flaggedBy": "",
+   "flaggedAt": "",
+   "installment": null
   },
   {
    "id": "t_muq7d6je2j9xcb",
