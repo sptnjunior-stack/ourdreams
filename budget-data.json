@@ -190,6 +190,16 @@
    "updatedBy": "junior"
   },
   {
+   "id": "c_bank-admin-fees",
+   "name": "Bank & Admin Fees",
+   "type": "expense",
+   "group": "Needs",
+   "color": "#a8a29e",
+   "order": 15,
+   "updatedAt": "2026-10-02T04:06:03.626Z",
+   "updatedBy": "junior"
+  },
+  {
    "id": "c_savings-investment",
    "name": "Savings & Investment",
    "type": "expense",
@@ -223,11 +233,6 @@
    "updatedAt": "1970-01-01T00:00:00.000Z"
   },
   {
-   "id": "c_side-income",
-   "deleted": true,
-   "updatedAt": "2026-09-30T13:30:25.019Z"
-  },
-  {
    "id": "c_other-income",
    "name": "Other Income",
    "type": "income",
@@ -235,6 +240,11 @@
    "color": "#94a3b8",
    "order": 22,
    "updatedAt": "1970-01-01T00:00:00.000Z"
+  },
+  {
+   "id": "c_side-income",
+   "deleted": true,
+   "updatedAt": "2026-09-30T13:30:25.019Z"
   },
   {
    "id": "c_mumpkffm7c4i1g",
@@ -307,16 +317,6 @@
    "updatedBy": "junior",
    "createdBy": "junior",
    "fixed": false
-  },
-  {
-   "id": "c_bank-admin-fees",
-   "name": "Bank & Admin Fees",
-   "type": "expense",
-   "group": "Needs",
-   "color": "#a8a29e",
-   "order": 15,
-   "updatedAt": "2026-10-02T04:06:03.626Z",
-   "updatedBy": "junior"
   }
  ],
  "accounts": [
@@ -20019,6 +20019,31 @@
    "updatedAt": "2026-10-03T03:31:10.592Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "t_muru96prhn6l1x",
+   "type": "expense",
+   "date": "2026-09-28",
+   "amount": 217250,
+   "currency": "IDR",
+   "rate": 1,
+   "description": "Gift - Mas Adhi Birthday",
+   "categoryId": "c_gifts-donations",
+   "person": "sabit",
+   "accountId": "a_murqr4q912ic9k",
+   "toAccountId": "",
+   "notes": "",
+   "goalId": "",
+   "fee": 0,
+   "flagged": false,
+   "flagNote": "",
+   "flaggedBy": "",
+   "flaggedAt": "",
+   "installment": null,
+   "toAmount": null,
+   "updatedAt": "2026-10-03T03:35:51.161Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "budgets": [
@@ -20977,5 +21002,5 @@
   }
  ],
  "contributions": [],
- "createdAt": "2026-09-29T13:06:09.019Z"
+ "createdAt": "2026-10-03T01:43:13.414Z"
 }
