@@ -20364,6 +20364,33 @@
    "updatedAt": "2026-10-03T06:51:44.821Z",
    "updatedBy": "junior",
    "createdBy": "junior"
+  },
+  {
+   "id": "t_mus1c28g6oejuj",
+   "type": "expense",
+   "date": "2026-10-03",
+   "amount": 9000,
+   "currency": "IDR",
+   "rate": 1,
+   "description": "Grab - Gama to Lotte",
+   "categoryId": "c_transport",
+   "person": "junior",
+   "accountId": "a_mupl36tz4lxxbh",
+   "toAccountId": "",
+   "notes": "",
+   "goalId": "",
+   "fee": 0,
+   "payback": false,
+   "flagged": false,
+   "flagNote": "",
+   "flaggedBy": "",
+   "flaggedAt": "",
+   "installment": null,
+   "repeat": null,
+   "toAmount": null,
+   "updatedAt": "2026-10-03T06:53:14.171Z",
+   "updatedBy": "junior",
+   "createdBy": "junior"
   }
  ],
  "budgets": [
