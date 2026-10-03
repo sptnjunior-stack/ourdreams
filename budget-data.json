@@ -19251,6 +19251,34 @@
    "updatedAt": "2026-10-03T01:49:30.240Z",
    "updatedBy": "junior",
    "createdBy": "junior"
+  },
+  {
+   "id": "t_murrcwz0wvfkic",
+   "type": "expense",
+   "date": "2026-10-03",
+   "amount": 5000000,
+   "currency": "IDR",
+   "rate": 1,
+   "description": "",
+   "categoryId": "c_personal-care",
+   "person": "junior",
+   "accountId": "a_murqr4q912ic9k",
+   "toAccountId": "",
+   "notes": "",
+   "goalId": "",
+   "fee": 0,
+   "flagged": false,
+   "flagNote": "",
+   "flaggedBy": "",
+   "flaggedAt": "",
+   "installment": {
+    "months": 3,
+    "interest": 0
+   },
+   "toAmount": null,
+   "updatedAt": "2026-10-03T02:14:10.182Z",
+   "updatedBy": "junior",
+   "createdBy": "junior"
   }
  ],
  "budgets": [
