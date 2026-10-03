@@ -20260,6 +20260,22 @@
    "updatedAt": "2026-10-03T04:49:51.250Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "t_murzzyel8a6kx2",
+   "type": "adjustment",
+   "date": "2026-10-03",
+   "amount": 1879746,
+   "currency": "IDR",
+   "rate": 1,
+   "description": "Balance adjustment",
+   "categoryId": "",
+   "person": "junior",
+   "accountId": "a_mupl36tz4lxxbh",
+   "notes": "Set to Rp 15.338.507",
+   "updatedAt": "2026-10-03T06:15:31.054Z",
+   "updatedBy": "junior",
+   "createdBy": "junior"
   }
  ],
  "budgets": [
