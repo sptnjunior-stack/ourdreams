@@ -20274,9 +20274,12 @@
   },
   {
    "id": "b_2026-09_c_salary_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:53.953Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T05:07:08.208Z",
+   "updatedBy": "sabit",
+   "month": "2026-09",
+   "categoryId": "c_salary",
+   "person": "sabit",
+   "amount": 8573169
   },
   {
    "id": "b_2026-09_c_groceries_junior",
