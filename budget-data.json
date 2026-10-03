@@ -21326,6 +21326,16 @@
    "updatedAt": "2026-10-03T05:11:51.684Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "b_2026-09_c_savings-investment_sabit",
+   "month": "2026-09",
+   "categoryId": "c_savings-investment",
+   "person": "sabit",
+   "amount": 1000000,
+   "updatedAt": "2026-10-03T05:12:04.439Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "goals": [
