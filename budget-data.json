@@ -19991,6 +19991,31 @@
    "updatedAt": "2026-10-03T03:27:34.745Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "t_muru0sspynd97i",
+   "type": "expense",
+   "date": "2026-09-26",
+   "amount": 54000,
+   "currency": "IDR",
+   "rate": 1,
+   "description": "Air kelapa",
+   "categoryId": "c_mumpkffm7c4i1g",
+   "person": "sabit",
+   "accountId": "a_murqr4q912ic9k",
+   "toAccountId": "",
+   "notes": "",
+   "goalId": "",
+   "fee": 0,
+   "flagged": false,
+   "flagNote": "",
+   "flaggedBy": "",
+   "flaggedAt": "",
+   "installment": null,
+   "toAmount": null,
+   "updatedAt": "2026-10-03T03:29:02.191Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "budgets": [
