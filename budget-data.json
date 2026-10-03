@@ -384,13 +384,13 @@
    "opening": 0,
    "openingDate": "",
    "archived": false,
-   "updatedAt": "2026-10-02T03:48:28.102Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T01:52:13.601Z",
+   "updatedBy": "sabit",
    "createdBy": "junior",
    "limit": "",
    "closingDay": "",
    "dueDay": "",
-   "order": 3
+   "order": 4
   },
   {
    "id": "a_mupl36tz4lxxbh",
@@ -506,10 +506,10 @@
    "limit": "",
    "closingDay": "",
    "dueDay": "",
-   "updatedAt": "2026-10-02T03:48:28.102Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T01:52:13.600Z",
+   "updatedBy": "sabit",
    "createdBy": "junior",
-   "order": 4
+   "order": 3
   },
   {
    "id": "a_muqfdr5h7tkl6s",
@@ -591,9 +591,10 @@
    "limit": 43200000,
    "closingDay": 20,
    "dueDay": 8,
-   "updatedAt": "2026-10-02T05:26:22.795Z",
-   "updatedBy": "junior",
-   "createdBy": "junior"
+   "updatedAt": "2026-10-03T01:52:13.602Z",
+   "updatedBy": "sabit",
+   "createdBy": "junior",
+   "order": 15
   }
  ],
  "transactions": [
