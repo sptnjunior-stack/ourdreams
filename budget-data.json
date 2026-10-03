@@ -20270,6 +20270,37 @@
    "updatedAt": "2026-10-03T06:16:24.202Z",
    "updatedBy": "junior",
    "createdBy": "junior"
+  },
+  {
+   "id": "t_mus0so6ezflmwb",
+   "type": "expense",
+   "date": "2026-09-02",
+   "amount": 1900000,
+   "currency": "IDR",
+   "rate": 1,
+   "description": "Apartment Rent",
+   "categoryId": "c_housing-rent",
+   "person": "sabit",
+   "accountId": "a_muo7snjfjy49vx",
+   "toAccountId": "a_mupl36tz4lxxbh",
+   "notes": "",
+   "goalId": "",
+   "fee": 0,
+   "payback": true,
+   "flagged": false,
+   "flagNote": "",
+   "flaggedBy": "",
+   "flaggedAt": "",
+   "installment": null,
+   "repeat": {
+    "every": "month",
+    "day": 2,
+    "skips": []
+   },
+   "toAmount": null,
+   "updatedAt": "2026-10-03T06:48:43.287Z",
+   "updatedBy": "junior",
+   "createdBy": "junior"
   }
  ],
  "budgets": [
