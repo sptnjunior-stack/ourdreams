@@ -21246,6 +21246,16 @@
    "updatedAt": "2026-10-03T05:08:16.533Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "b_2026-09_c_personal-care_sabit",
+   "month": "2026-09",
+   "categoryId": "c_personal-care",
+   "person": "sabit",
+   "amount": 400000,
+   "updatedAt": "2026-10-03T05:08:25.286Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "goals": [
