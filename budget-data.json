@@ -20377,44 +20377,44 @@
   },
   {
    "id": "b_2026-10_c_salary_junior",
-   "updatedAt": "2026-10-03T04:46:24.188Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.201Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_salary",
    "person": "junior",
-   "amount": 30000000
+   "amount": 30500000
   },
   {
    "id": "b_2026-10_c_salary_sabit",
-   "updatedAt": "2026-10-03T04:55:42.498Z",
+   "updatedAt": "2026-10-03T05:12:33.219Z",
    "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_salary",
    "person": "sabit",
-   "amount": 8000000
+   "amount": 8600000
   },
   {
    "id": "b_2026-10_c_groceries_junior",
-   "updatedAt": "2026-10-02T05:17:27.709Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.186Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_groceries",
    "person": "junior",
-   "amount": 3000000
+   "amount": 4800000
   },
   {
    "id": "b_2026-10_c_groceries_sabit",
-   "updatedAt": "2026-10-03T05:04:54.503Z",
+   "updatedAt": "2026-10-03T05:12:33.207Z",
    "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_groceries",
    "person": "sabit",
-   "amount": 50000
+   "amount": 100000
   },
   {
    "id": "b_2026-10_c_transport_junior",
-   "updatedAt": "2026-10-02T05:16:21.489Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.193Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_transport",
    "person": "junior",
@@ -20422,32 +20422,35 @@
   },
   {
    "id": "b_2026-10_c_transport_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:42.153Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T05:12:33.210Z",
+   "updatedBy": "sabit",
+   "month": "2026-10",
+   "categoryId": "c_transport",
+   "person": "sabit",
+   "amount": 650000
   },
   {
    "id": "b_2026-10_c_mumpkffm7c4i1g_junior",
-   "updatedAt": "2026-10-02T05:18:36.700Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.183Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_mumpkffm7c4i1g",
    "person": "junior",
-   "amount": 1500000
+   "amount": 3050000
   },
   {
    "id": "b_2026-10_c_dining-coffee_junior",
-   "updatedAt": "2026-10-02T05:17:36.257Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.184Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_dining-coffee",
    "person": "junior",
-   "amount": 3500000
+   "amount": 5950000
   },
   {
    "id": "b_2026-10_c_debt-installments_junior",
-   "updatedAt": "2026-10-02T05:16:21.489Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.185Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_debt-installments",
    "person": "junior",
@@ -20455,53 +20458,53 @@
   },
   {
    "id": "b_2026-10_c_utilities-bills_junior",
-   "updatedAt": "2026-10-02T05:18:57.455Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.187Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_utilities-bills",
    "person": "junior",
-   "amount": 1500000
+   "amount": 2450000
   },
   {
    "id": "b_2026-10_c_personal-care_junior",
-   "updatedAt": "2026-10-02T05:20:12.793Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.188Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_personal-care",
    "person": "junior",
-   "amount": 1300000
+   "amount": 2100000
   },
   {
    "id": "b_2026-10_c_shopping_junior",
-   "updatedAt": "2026-10-02T05:18:40.324Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.189Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_shopping",
    "person": "junior",
-   "amount": 1500000
+   "amount": 1700000
   },
   {
    "id": "b_2026-10_c_gifts-donations_junior",
-   "updatedAt": "2026-10-02T05:19:55.007Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.190Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_gifts-donations",
    "person": "junior",
-   "amount": 500000
+   "amount": 2300000
   },
   {
    "id": "b_2026-10_c_mumpkffnraebe9_junior",
-   "updatedAt": "2026-10-02T05:18:24.154Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.191Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_mumpkffnraebe9",
    "person": "junior",
-   "amount": 3200000
+   "amount": 4800000
   },
   {
    "id": "b_2026-10_c_mumpkffo1jnyxe_junior",
-   "updatedAt": "2026-10-02T05:16:21.489Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.192Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_mumpkffo1jnyxe",
    "person": "junior",
@@ -20509,35 +20512,35 @@
   },
   {
    "id": "b_2026-10_c_mumpkffp42abzz_junior",
-   "updatedAt": "2026-10-02T05:18:09.173Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.194Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_mumpkffp42abzz",
    "person": "junior",
-   "amount": 3000000
+   "amount": 3100000
   },
   {
    "id": "b_2026-10_c_family_junior",
-   "updatedAt": "2026-10-02T05:19:18.276Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.195Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_family",
    "person": "junior",
-   "amount": 2000000
+   "amount": 2600000
   },
   {
    "id": "b_2026-10_c_housing-rent_junior",
-   "updatedAt": "2026-10-02T05:16:36.469Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.196Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_housing-rent",
    "person": "junior",
-   "amount": 0
+   "amount": 4000000
   },
   {
    "id": "b_2026-10_c_health_junior",
-   "updatedAt": "2026-10-02T05:16:21.489Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.197Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_health",
    "person": "junior",
@@ -20545,8 +20548,8 @@
   },
   {
    "id": "b_2026-10_c_entertainment_junior",
-   "updatedAt": "2026-10-02T05:16:21.489Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.198Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_entertainment",
    "person": "junior",
@@ -20554,49 +20557,70 @@
   },
   {
    "id": "b_2026-10_c_debt-installments_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:42.153Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T05:12:33.202Z",
+   "updatedBy": "sabit",
+   "month": "2026-10",
+   "categoryId": "c_debt-installments",
+   "person": "sabit",
+   "amount": 1000000
   },
   {
    "id": "b_2026-10_c_personal-care_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:42.153Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T05:12:33.203Z",
+   "updatedBy": "sabit",
+   "month": "2026-10",
+   "categoryId": "c_personal-care",
+   "person": "sabit",
+   "amount": 500000
   },
   {
    "id": "b_2026-10_c_shopping_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:42.153Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T05:12:33.205Z",
+   "updatedBy": "sabit",
+   "month": "2026-10",
+   "categoryId": "c_shopping",
+   "person": "sabit",
+   "amount": 750000
   },
   {
    "id": "b_2026-10_c_mumpkffm7c4i1g_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:42.153Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T05:12:33.211Z",
+   "updatedBy": "sabit",
+   "month": "2026-10",
+   "categoryId": "c_mumpkffm7c4i1g",
+   "person": "sabit",
+   "amount": 800000
   },
   {
    "id": "b_2026-10_c_mumpzduqgrxj26_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:42.153Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T05:12:33.208Z",
+   "updatedBy": "sabit",
+   "month": "2026-10",
+   "categoryId": "c_mumpzduqgrxj26",
+   "person": "sabit",
+   "amount": 150000
   },
   {
    "id": "b_2026-10_c_dining-coffee_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:42.153Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T05:12:33.209Z",
+   "updatedBy": "sabit",
+   "month": "2026-10",
+   "categoryId": "c_dining-coffee",
+   "person": "sabit",
+   "amount": 1050000
   },
   {
    "id": "b_2026-10_c_gifts-donations_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:42.153Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T05:12:33.206Z",
+   "updatedBy": "sabit",
+   "month": "2026-10",
+   "categoryId": "c_gifts-donations",
+   "person": "sabit",
+   "amount": 2150000
   },
   {
    "id": "b_2026-10_c_housing-rent_sabit",
-   "updatedAt": "2026-10-03T04:56:02.774Z",
+   "updatedAt": "2026-10-03T05:12:33.212Z",
    "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_housing-rent",
@@ -20605,9 +20629,12 @@
   },
   {
    "id": "b_2026-10_c_mumpkffo1jnyxe_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:42.153Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T05:12:33.213Z",
+   "updatedBy": "sabit",
+   "month": "2026-10",
+   "categoryId": "c_mumpkffo1jnyxe",
+   "person": "sabit",
+   "amount": 200000
   },
   {
    "id": "b_2026-10_c_utilities-bills_sabit",
@@ -20617,15 +20644,21 @@
   },
   {
    "id": "b_2026-10_c_health_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:42.153Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T05:12:33.215Z",
+   "updatedBy": "sabit",
+   "month": "2026-10",
+   "categoryId": "c_health",
+   "person": "sabit",
+   "amount": 50000
   },
   {
    "id": "b_2026-10_c_entertainment_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:42.153Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T05:12:33.217Z",
+   "updatedBy": "sabit",
+   "month": "2026-10",
+   "categoryId": "c_entertainment",
+   "person": "sabit",
+   "amount": 800000
   },
   {
    "id": "b_2026-07_c_housing-rent_junior",
@@ -21175,21 +21208,18 @@
   },
   {
    "id": "b_2026-10_c_mumpzduqgrxj26_junior",
-   "updatedAt": "2026-10-02T05:16:46.936Z",
-   "updatedBy": "junior",
-   "month": "2026-10",
-   "categoryId": "c_mumpzduqgrxj26",
-   "person": "junior",
-   "amount": 150000
+   "deleted": true,
+   "updatedAt": "2026-10-03T05:12:33.180Z",
+   "updatedBy": "sabit"
   },
   {
    "id": "b_2026-10_c_mumpkffnleap5w_junior",
-   "updatedAt": "2026-10-02T05:19:36.592Z",
-   "updatedBy": "junior",
+   "updatedAt": "2026-10-03T05:12:33.200Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_mumpkffnleap5w",
    "person": "junior",
-   "amount": 500000
+   "amount": 2100000
   },
   {
    "id": "b_2026-10_c_travel_junior",
@@ -21199,13 +21229,12 @@
   },
   {
    "id": "b_2026-10_c_bank-admin-fees_junior",
+   "updatedAt": "2026-10-03T05:12:33.199Z",
+   "updatedBy": "sabit",
    "month": "2026-10",
    "categoryId": "c_bank-admin-fees",
    "person": "junior",
-   "amount": 50000,
-   "updatedAt": "2026-10-02T05:16:21.489Z",
-   "updatedBy": "junior",
-   "createdBy": "junior"
+   "amount": 50000
   },
   {
    "id": "b_2026-09_c_housing-rent_sabit",
@@ -21334,6 +21363,56 @@
    "person": "sabit",
    "amount": 1000000,
    "updatedAt": "2026-10-03T05:12:04.439Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
+  },
+  {
+   "id": "b_2026-10_c_bank-admin-fees_sabit",
+   "month": "2026-10",
+   "categoryId": "c_bank-admin-fees",
+   "person": "sabit",
+   "amount": 200000,
+   "updatedAt": "2026-10-03T05:12:33.204Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
+  },
+  {
+   "id": "b_2026-10_c_family_sabit",
+   "month": "2026-10",
+   "categoryId": "c_family",
+   "person": "sabit",
+   "amount": 150000,
+   "updatedAt": "2026-10-03T05:12:33.214Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
+  },
+  {
+   "id": "b_2026-10_c_subscriptions_sabit",
+   "month": "2026-10",
+   "categoryId": "c_subscriptions",
+   "person": "sabit",
+   "amount": 100000,
+   "updatedAt": "2026-10-03T05:12:33.216Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
+  },
+  {
+   "id": "b_2026-10_c_mumpkffnleap5w_sabit",
+   "month": "2026-10",
+   "categoryId": "c_mumpkffnleap5w",
+   "person": "sabit",
+   "amount": 100000,
+   "updatedAt": "2026-10-03T05:12:33.218Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
+  },
+  {
+   "id": "b_2026-10_c_other-income_sabit",
+   "month": "2026-10",
+   "categoryId": "c_other-income",
+   "person": "sabit",
+   "amount": 1000000,
+   "updatedAt": "2026-10-03T05:12:33.220Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
   }
