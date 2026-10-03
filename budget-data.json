@@ -384,13 +384,13 @@
    "opening": 0,
    "openingDate": "2026-10-03",
    "archived": false,
-   "updatedAt": "2026-10-03T02:05:52.803Z",
+   "updatedAt": "2026-10-03T02:06:01.879Z",
    "updatedBy": "junior",
    "createdBy": "junior",
    "limit": "",
    "closingDay": "",
    "dueDay": "",
-   "order": 7
+   "order": 9
   },
   {
    "id": "a_mupl36tz4lxxbh",
@@ -401,10 +401,10 @@
    "opening": 18680759,
    "openingDate": "",
    "archived": false,
-   "updatedAt": "2026-10-02T03:58:40.544Z",
+   "updatedAt": "2026-10-03T02:06:01.881Z",
    "updatedBy": "junior",
    "createdBy": "junior",
-   "order": 9,
+   "order": 11,
    "limit": "",
    "closingDay": "",
    "dueDay": ""
@@ -418,10 +418,10 @@
    "opening": 0,
    "openingDate": "",
    "archived": false,
-   "updatedAt": "2026-10-02T03:58:51.716Z",
+   "updatedAt": "2026-10-03T02:06:01.882Z",
    "updatedBy": "junior",
    "createdBy": "junior",
-   "order": 10,
+   "order": 12,
    "limit": "",
    "closingDay": "",
    "dueDay": ""
@@ -435,10 +435,10 @@
    "opening": 0,
    "openingDate": "",
    "archived": false,
-   "updatedAt": "2026-10-02T03:59:07.076Z",
+   "updatedAt": "2026-10-03T02:06:01.883Z",
    "updatedBy": "junior",
    "createdBy": "junior",
-   "order": 11,
+   "order": 13,
    "limit": "",
    "closingDay": "",
    "dueDay": ""
@@ -452,10 +452,10 @@
    "opening": 0,
    "openingDate": "",
    "archived": false,
-   "updatedAt": "2026-10-02T03:59:13.661Z",
+   "updatedAt": "2026-10-03T02:06:01.884Z",
    "updatedBy": "junior",
    "createdBy": "junior",
-   "order": 12,
+   "order": 14,
    "limit": "",
    "closingDay": "",
    "dueDay": ""
@@ -469,10 +469,10 @@
    "opening": 0,
    "openingDate": "",
    "archived": false,
-   "updatedAt": "2026-10-02T03:59:19.468Z",
+   "updatedAt": "2026-10-03T02:06:01.885Z",
    "updatedBy": "junior",
    "createdBy": "junior",
-   "order": 13,
+   "order": 15,
    "limit": "",
    "closingDay": "",
    "dueDay": ""
@@ -486,10 +486,10 @@
    "opening": -30884343.89,
    "openingDate": "2026-10-02",
    "archived": false,
-   "updatedAt": "2026-10-02T05:24:59.151Z",
+   "updatedAt": "2026-10-03T02:06:01.886Z",
    "updatedBy": "junior",
    "createdBy": "junior",
-   "order": 14,
+   "order": 16,
    "limit": 40000000,
    "closingDay": 22,
    "dueDay": 8
@@ -506,10 +506,10 @@
    "limit": "",
    "closingDay": "",
    "dueDay": "",
-   "updatedAt": "2026-10-03T02:05:50.066Z",
+   "updatedAt": "2026-10-03T02:06:01.880Z",
    "updatedBy": "junior",
    "createdBy": "junior",
-   "order": 8
+   "order": 10
   },
   {
    "id": "a_muqfdr5h7tkl6s",
@@ -557,10 +557,10 @@
    "limit": "",
    "closingDay": "",
    "dueDay": "",
-   "updatedAt": "2026-10-03T02:05:54.560Z",
+   "updatedAt": "2026-10-03T02:06:01.878Z",
    "updatedBy": "junior",
    "createdBy": "junior",
-   "order": 6
+   "order": 8
   },
   {
    "id": "a_muqff16lxrz9o0",
@@ -591,10 +591,10 @@
    "limit": 43200000,
    "closingDay": 20,
    "dueDay": 8,
-   "updatedAt": "2026-10-03T01:52:13.602Z",
-   "updatedBy": "sabit",
+   "updatedAt": "2026-10-03T02:06:01.887Z",
+   "updatedBy": "junior",
    "createdBy": "junior",
-   "order": 15
+   "order": 17
   },
   {
    "id": "a_murqr4q912ic9k",
@@ -608,10 +608,10 @@
    "limit": 22369999,
    "closingDay": 15,
    "dueDay": 5,
-   "updatedAt": "2026-10-03T02:05:50.067Z",
+   "updatedAt": "2026-10-03T02:05:57.635Z",
    "updatedBy": "junior",
    "createdBy": "sabit",
-   "order": 16
+   "order": 6
   },
   {
    "id": "a_murqwosmulou33",
@@ -625,10 +625,10 @@
    "limit": 3000000,
    "closingDay": 15,
    "dueDay": 1,
-   "updatedAt": "2026-10-03T02:05:50.068Z",
+   "updatedAt": "2026-10-03T02:06:01.888Z",
    "updatedBy": "junior",
    "createdBy": "sabit",
-   "order": 17
+   "order": 18
   },
   {
    "id": "a_murr0e3hnvl6dm",
@@ -642,10 +642,10 @@
    "limit": 3000000,
    "closingDay": 17,
    "dueDay": 7,
-   "updatedAt": "2026-10-03T02:05:50.069Z",
+   "updatedAt": "2026-10-03T02:06:01.877Z",
    "updatedBy": "junior",
    "createdBy": "sabit",
-   "order": 18
+   "order": 7
   }
  ],
  "transactions": [
