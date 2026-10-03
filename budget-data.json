@@ -21213,6 +21213,16 @@
    "updatedAt": "2026-10-03T05:07:25.823Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "b_2026-09_c_dining-coffee_sabit",
+   "month": "2026-09",
+   "categoryId": "c_dining-coffee",
+   "person": "sabit",
+   "amount": 1500000,
+   "updatedAt": "2026-10-03T05:07:42.430Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "goals": [
