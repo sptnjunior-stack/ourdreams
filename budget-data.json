@@ -627,6 +627,22 @@
    "updatedAt": "2026-10-03T02:03:52.244Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "a_murr0e3hnvl6dm",
+   "name": "BRI CC",
+   "type": "credit",
+   "owner": "sabit",
+   "currency": "IDR",
+   "opening": 0,
+   "openingDate": "2026-10-03",
+   "archived": false,
+   "limit": 3000000,
+   "closingDay": 17,
+   "dueDay": 7,
+   "updatedAt": "2026-10-03T02:05:28.404Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "transactions": [
