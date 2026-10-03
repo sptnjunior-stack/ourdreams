@@ -20214,7 +20214,7 @@
   {
    "id": "t_murwvrndbxjluo",
    "type": "income",
-   "date": "2026-10-03",
+   "date": "2026-09-25",
    "amount": 8573169,
    "currency": "IDR",
    "rate": 1,
@@ -20232,7 +20232,7 @@
    "flaggedAt": "",
    "installment": null,
    "toAmount": null,
-   "updatedAt": "2026-10-03T04:49:00.961Z",
+   "updatedAt": "2026-10-03T05:06:34.786Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
   },
