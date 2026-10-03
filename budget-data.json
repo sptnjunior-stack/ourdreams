@@ -20292,9 +20292,12 @@
   },
   {
    "id": "b_2026-09_c_groceries_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:53.953Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T05:07:34.592Z",
+   "updatedBy": "sabit",
+   "month": "2026-09",
+   "categoryId": "c_groceries",
+   "person": "sabit",
+   "amount": 100000
   },
   {
    "id": "b_2026-07_c_salary_junior",
