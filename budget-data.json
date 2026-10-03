@@ -21296,6 +21296,16 @@
    "updatedAt": "2026-10-03T05:11:13.097Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "b_2026-09_c_entertainment_sabit",
+   "month": "2026-09",
+   "categoryId": "c_entertainment",
+   "person": "sabit",
+   "amount": 500000,
+   "updatedAt": "2026-10-03T05:11:32.222Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "goals": [
