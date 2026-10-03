@@ -20235,6 +20235,31 @@
    "updatedAt": "2026-10-03T04:49:00.961Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "t_murwws6wgtjuuo",
+   "type": "income",
+   "date": "2026-09-25",
+   "amount": 1000000,
+   "currency": "IDR",
+   "rate": 1,
+   "description": "Pengembalian Tabungan MDP",
+   "categoryId": "c_other-income",
+   "person": "sabit",
+   "accountId": "a_cash",
+   "toAccountId": "",
+   "notes": "",
+   "goalId": "",
+   "fee": 0,
+   "flagged": false,
+   "flagNote": "",
+   "flaggedBy": "",
+   "flaggedAt": "",
+   "installment": null,
+   "toAmount": null,
+   "updatedAt": "2026-10-03T04:49:51.250Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "budgets": [
