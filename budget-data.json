@@ -21316,6 +21316,16 @@
    "updatedAt": "2026-10-03T05:11:35.893Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "b_2026-09_c_gifts-donations_sabit",
+   "month": "2026-09",
+   "categoryId": "c_gifts-donations",
+   "person": "sabit",
+   "amount": 1000000,
+   "updatedAt": "2026-10-03T05:11:51.684Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "goals": [
