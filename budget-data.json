@@ -21286,6 +21286,16 @@
    "updatedAt": "2026-10-03T05:11:02.774Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "b_2026-09_c_shopping_sabit",
+   "month": "2026-09",
+   "categoryId": "c_shopping",
+   "person": "sabit",
+   "amount": 800000,
+   "updatedAt": "2026-10-03T05:11:13.097Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "goals": [
