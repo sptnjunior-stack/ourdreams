@@ -21266,6 +21266,16 @@
    "updatedAt": "2026-10-03T05:08:32.624Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "b_2026-09_c_mumpkffnleap5w_sabit",
+   "month": "2026-09",
+   "categoryId": "c_mumpkffnleap5w",
+   "person": "sabit",
+   "amount": 100000,
+   "updatedAt": "2026-10-03T05:09:05.430Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "goals": [
