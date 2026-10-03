@@ -21371,9 +21371,12 @@
   },
   {
    "id": "b_2026-10_c_bank-admin-fees_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-03T05:13:19.903Z",
-   "updatedBy": "sabit"
+   "updatedAt": "2026-10-03T05:15:49.288Z",
+   "updatedBy": "sabit",
+   "month": "2026-10",
+   "categoryId": "c_bank-admin-fees",
+   "person": "sabit",
+   "amount": 300000
   },
   {
    "id": "b_2026-10_c_family_sabit",
