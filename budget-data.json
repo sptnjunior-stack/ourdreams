@@ -21256,6 +21256,16 @@
    "updatedAt": "2026-10-03T05:08:25.286Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "b_2026-09_c_health_sabit",
+   "month": "2026-09",
+   "categoryId": "c_health",
+   "person": "sabit",
+   "amount": 50000,
+   "updatedAt": "2026-10-03T05:08:32.624Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "goals": [
