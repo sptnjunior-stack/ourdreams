@@ -611,6 +611,22 @@
    "updatedAt": "2026-10-03T02:00:45.494Z",
    "updatedBy": "sabit",
    "createdBy": "sabit"
+  },
+  {
+   "id": "a_murqwosmulou33",
+   "name": "BRI TOKOPED CC",
+   "type": "credit",
+   "owner": "sabit",
+   "currency": "IDR",
+   "opening": -1263342,
+   "openingDate": "2026-10-03",
+   "archived": false,
+   "limit": 3000000,
+   "closingDay": 15,
+   "dueDay": 1,
+   "updatedAt": "2026-10-03T02:03:52.244Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "transactions": [
