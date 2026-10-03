@@ -20584,9 +20584,12 @@
   },
   {
    "id": "b_2026-10_c_housing-rent_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:42.153Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T04:56:02.774Z",
+   "updatedBy": "sabit",
+   "month": "2026-10",
+   "categoryId": "c_housing-rent",
+   "person": "sabit",
+   "amount": 1900000
   },
   {
    "id": "b_2026-10_c_mumpkffo1jnyxe_sabit",
