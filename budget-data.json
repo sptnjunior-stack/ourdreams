@@ -20395,9 +20395,12 @@
   },
   {
    "id": "b_2026-10_c_groceries_sabit",
-   "deleted": true,
-   "updatedAt": "2026-10-01T13:40:42.153Z",
-   "updatedBy": "junior"
+   "updatedAt": "2026-10-03T05:04:54.503Z",
+   "updatedBy": "sabit",
+   "month": "2026-10",
+   "categoryId": "c_groceries",
+   "person": "sabit",
+   "amount": 50000
   },
   {
    "id": "b_2026-10_c_transport_junior",
