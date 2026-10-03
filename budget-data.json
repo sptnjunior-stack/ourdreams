@@ -20276,6 +20276,31 @@
    "updatedAt": "2026-10-03T06:15:31.054Z",
    "updatedBy": "junior",
    "createdBy": "junior"
+  },
+  {
+   "id": "t_mus00ri8z3oih4",
+   "type": "expense",
+   "date": "2026-10-03",
+   "amount": 60000,
+   "currency": "IDR",
+   "rate": 1,
+   "description": "Transfer Nayla",
+   "categoryId": "c_mumpkffnraebe9",
+   "person": "junior",
+   "accountId": "a_mupl36tz4lxxbh",
+   "toAccountId": "",
+   "notes": "",
+   "goalId": "",
+   "fee": 0,
+   "flagged": false,
+   "flagNote": "",
+   "flaggedBy": "",
+   "flaggedAt": "",
+   "installment": null,
+   "toAmount": null,
+   "updatedAt": "2026-10-03T06:16:24.202Z",
+   "updatedBy": "junior",
+   "createdBy": "junior"
   }
  ],
  "budgets": [
