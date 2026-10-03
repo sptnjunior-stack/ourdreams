@@ -595,6 +595,22 @@
    "updatedBy": "sabit",
    "createdBy": "junior",
    "order": 15
+  },
+  {
+   "id": "a_murqr4q912ic9k",
+   "name": "SPayLater",
+   "type": "paylater",
+   "owner": "sabit",
+   "currency": "IDR",
+   "opening": -2677682,
+   "openingDate": "2026-10-03",
+   "archived": false,
+   "limit": 22369999,
+   "closingDay": 15,
+   "dueDay": 5,
+   "updatedAt": "2026-10-03T02:00:45.494Z",
+   "updatedBy": "sabit",
+   "createdBy": "sabit"
   }
  ],
  "transactions": [
