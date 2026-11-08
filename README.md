@@ -4,7 +4,7 @@ A budget tracker for two people (Junior & Sabit) that runs on **GitHub Pages** a
 
 | Page | What it does |
 |---|---|
-| **Dashboard** | Income, spending, savings, budget left and current balance vs the previous period; "At a glance" insights; **daily spending vs allowance** per person (the striped part of a bar is what went over that day's allowance, with a summary like "Junior over on 4 of 30 days"); income vs spending; by category; budget vs actual, goals, recent; Needs/Wants/Savings vs the 50/30/20 rule; who spent what; largest expenses. |
+| **Dashboard** | Income, spending, savings, budget left and current balance vs the previous period; "At a glance" insights; **spending vs allowance** per person by **Days / Weeks / Months** (swipe sideways on a phone) (the striped part of a bar is what went over that day's allowance, with a summary like "Junior over on 4 of 30 days"); income vs spending; by category; budget vs actual, goals, recent; Needs/Wants/Savings vs the 50/30/20 rule; who spent what; largest expenses. |
 | **Log** | Every transaction (spending, income, transfers). Search, sort, bulk-edit category/person/account, import, export CSV. |
 | **Budget** | Monthly plan per category **per person** (Junior / Sabit) plus planned income. Plans roll forward to later months until you change them. Shows each person's **daily allowance** (flexible budget ÷ days in the month). Plan vs actual, and budget vs actual by month. |
 | **Categories** | Add, edit, recolour, merge or delete categories, grouped as Needs / Wants / Savings. Monthly trend table per category. |
@@ -109,6 +109,13 @@ No category column? The importer guesses from the description (Indomaret → Gro
 - **Balances:** on Balance, add your real accounts with a starting balance and date (e.g. balance on 1 July). Record moves between accounts as **Transfers** (they don't count as spending). Use **Reconcile** whenever the bank balance differs.
 - **Goals:** create a goal, then **Add money** each month — or link a savings account so progress follows its balance.
 - **Color scheme:** Settings → **Color scheme** → Crossroads, Aura, Focus, Glow, Summer, Bauhaus, Pop, Volt or Apple. Each works in Light, Dark and Auto, and is saved per device, so you can each pick your own.
+
+### Accuracy helpers (v1.13)
+- **Unsynced changes:** the sync pill shows how many changes are only on this device. If sync has been off for more than a day, the Dashboard asks you to download a backup.
+- **Storage:** data is kept in both localStorage and IndexedDB (bigger and sturdier). On iPhone, open the tracker from the Home Screen icon so Safari doesn't clear it.
+- **Balance adjustments:** reconciling the same account twice on one day updates that day's adjustment instead of adding another. Balance shows "Unexplained" (the period's adjustments) per account and flags anything above Rp 50.000 with a **Review** button. **Review & merge** combines same-day adjustments into one (balances unchanged, with Undo). Adjustments are hidden in the Log unless you tap **Show adjustments**.
+- **Committed money:** installment portions and monthly repeats due in a month are "committed". Budget shows Plan · Committed · Spent freely · Left. Amber = the plan is lower than what's already committed (tap **Raise plan to cover**); red = new spending went over. Adding an installment purchase shows how it fits the plan before you save.
+- **Cash available:** the Dashboard shows bank, e-wallet and cash money, with "after upcoming bills" (card bills and monthly repeats due in the next 30 days) and what's owed on cards.
 
 ### How syncing works
 - Every change is saved in the browser immediately and pushed to `budget-data.json` about 1.5 s later. Each save is a **commit**, so the data repo's history is a full audit trail and backup.
