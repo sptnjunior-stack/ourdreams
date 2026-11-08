@@ -84,12 +84,19 @@ const App = {
     $('#fab').innerHTML = icon('plus');
     this.onHash(true);
     if (!cfg.me) welcome();
+    // "Open the add form when the app starts" (per device, Home Screen app only)
+    else if (cfg.startAdd && !this._fromLink && !Modal.isOpen()) {
+      const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+      if (standalone || cfg.startAdd === 'always') setTimeout(() => { if (!Modal.isOpen()) openTxForm(); }, 0);
+    }
     if (store._migrated) sync.markDirty();
     store.hydrate().then((r) => { if (r === 'merged') sync.markDirty(); });
     sync.start();
   },
   onHash(first = false) {
     let p = (location.hash || '').replace('#', '') || ui.page || 'dashboard';
+    // #add?amount=17000&desc=Lunch&cat=Dining&acc=Jago&who=sabit → open the add form filled in (from a bookmark or an iOS Shortcut)
+    if (/^add(\?|$)/.test(p)) { this._pendingAdd = new URLSearchParams(p.split('?')[1] || ''); this._fromLink = true; p = ui.page || 'dashboard'; }
     if (p === 'spending') p = 'log'; // old name of the Log page (bookmarks, saved state)
     const page = PAGES.some((x) => x[0] === p) ? p : 'dashboard';
     if (!first && page !== ui.page) { this.sel.clear(); this._pageChanged = true; }
@@ -98,6 +105,7 @@ const App = {
     $('#app').classList.remove('nav-open');
     this.render();
     if (!first) window.scrollTo(0, 0);
+    if (this._pendingAdd && cfg.me) { const q = this._pendingAdd; this._pendingAdd = null; setTimeout(() => openAddFromLink(q), 0); }
   },
   /** Switch pages inside the app without a browser navigation (works the same in Safari,
    * the Home Screen app and embedded previews, which would otherwise open links in a new window). */
@@ -418,6 +426,9 @@ const App = {
       case 'edit-acc': openAccountForm(store.get('accounts', id)); break;
       case 'reconcile': openReconcile(store.get('accounts', id)); break;
       case 'merge-adj': openMergeAdjustments(); break;
+      case 'between-details': openBetweenDetails(); break;
+      case 'settle-up': openSettleUp(); break;
+      case 'dup-tx': { const src = store.get('transactions', id); if (src) openTxForm(null, dupPreset(src)); break; }
       case 'raise-plan': {
         const ym = ui.budgetMonth || thisMonth(); const fl = getFilter();
         const people = fl.person === 'junior' || fl.person === 'sabit' ? [fl.person] : PEOPLE;
@@ -472,6 +483,8 @@ const App = {
       case 'statement': openStatement(store.get('accounts', id)); break;
       case 'set-me': cfg.me = v; saveCfg(); this.render(); toast(`This device is now ${pname(v)}'s.`); break;
       case 'set-theme': cfg.theme = v; saveCfg(); applyTheme(); this.render(); break;
+      case 'set-startadd': cfg.startAdd = v === 'on'; saveCfg(); this.render(); toast(cfg.startAdd ? 'The add form will open when you start the Home Screen app.' : 'The app opens on your last page again.'); break;
+      case 'copy-add-link': { const url = `${location.origin}${location.pathname}#add`; try { navigator.clipboard.writeText(url); toast('Link copied.'); } catch (e) { toast(url); } break; }
       case 'set-scheme': cfg.scheme = v; saveCfg(); applyTheme(); this.render(); toast(`Color scheme: ${(SCHEMES.find((s) => s.id === v) || {}).name || v}`); break;
       case 'fetch-rates': fetchRates(); break;
       case 'gh-save': ghSave(); break;
@@ -569,39 +582,57 @@ function openTxForm(existing, preset = {}) {
   if (t.person === 'shared') { t.person = SPLIT; t.splitJunior = 0.5; }
   if (isNew && ui.filter.person !== 'all' && !preset.person) { t.person = ui.filter.person; t.accountId = lastAccountFor(t.person); }
   let catTouched = !!existing && !!t.categoryId;
+  let accTouched = !!existing || !!preset.accountId;
   // past descriptions for the suggestion list: newest first, with how often and in which category they were used
   const descInfo = new Map();
   for (const x of [...store.activeTx()].sort((a, b) => b.date.localeCompare(a.date))) {
     const d = (x.description || '').trim(); if (!d) continue;
     const k = d.toLowerCase();
-    if (!descInfo.has(k)) descInfo.set(k, { text: d, n: 0, categoryId: x.categoryId, amount: txBase(x) });
+    if (!descInfo.has(k)) descInfo.set(k, { text: d, n: 0, categoryId: x.categoryId, amount: txBase(x), amt: x.amount, cur: x.currency || 'IDR', rate: x.rate, type: x.type, accountId: x.accountId, toAccountId: x.toAccountId, person: x.person, splitJunior: x.splitJunior });
     descInfo.get(k).n++;
   }
   const accOpts = (sel) => `<option value="">— none —</option>${store.all('accounts').filter((a) => !a.archived || a.id === sel).map((a) => `<option value="${a.id}" ${sel === a.id ? 'selected' : ''}>${esc(a.name)} (${a.currency})</option>`).join('')}`;
   const goals = store.all('goals');
   const hasFee = !!(Number(t.fee) || 0);
+  // "More options" holds the rarely used fields; it opens by itself when this transaction already uses one
+  const openMore = !!(hasFee || t.payback || t.repeat || t.repeatOf || t.flagged || (t.notes || '').trim());
+  // favorites: this person's most-used entries in the last 60 days (pinned first, hidden ones left out)
+  const favState = { editing: false };
+  const favList = () => {
+    if (!isNew || t.type === 'adjustment') return [];
+    const since = addDays(todayStr(), -60);
+    const pinned = (cfg.favPinned || []).filter((k) => descInfo.has(k)), hidden = new Set(cfg.favHidden || []);
+    const cnt = new Map();
+    for (const x of store.activeTx()) {
+      if (x.type === 'adjustment' || x.settle || x.repeatOf || !x.description || x.date < since) continue;
+      if (!(x.person === me() || isSplit(x) || x.createdBy === me())) continue;
+      const k = x.description.trim().toLowerCase(); cnt.set(k, (cnt.get(k) || 0) + 1);
+    }
+    const auto = [...cnt.entries()].filter(([k, n]) => n >= 2 && !hidden.has(k) && !pinned.includes(k)).sort((a, b) => b[1] - a[1]).map(([k]) => k);
+    return [...pinned.filter((k) => !hidden.has(k)), ...auto].slice(0, 6).map((k) => ({ k, ...descInfo.get(k), pinned: pinned.includes(k) }));
+  };
+  const favRowInner = () => {
+    const list = favList(); const nHidden = (cfg.favHidden || []).length;
+    if (!list.length && !nHidden) return '';
+    return `<span class="fav-label">${icon('heart')} Favorites</span>${list.map((x, i) => { const c = store.catMap().get(x.categoryId); return `<button type="button" class="fav-chip ${x.pinned ? 'pinned' : ''}" data-fav="${i}" title="${favState.editing ? (x.pinned ? 'Tap to unpin' : 'Tap to pin') : `Fill in ${esc(x.text)}`}">${c ? `<span class="dot" style="background:${c.color}"></span>` : ''}<span class="fav-t">${esc(x.text)}</span><b>${esc(shortIDR(Math.abs(x.amount)))}</b>${favState.editing ? `<span class="fav-pin">${x.pinned ? 'Unpin' : 'Pin'}</span><span class="fav-x" data-fav-hide="${i}" title="Hide" aria-label="Hide ${esc(x.text)}">×</span>` : x.pinned ? '<span class="fav-pinmark">•</span>' : ''}</button>`; }).join('')}
+      <button type="button" class="link-btn fav-edit" data-fav-edit>${favState.editing ? 'Done' : 'Edit'}</button>${favState.editing && nHidden ? `<button type="button" class="link-btn" data-fav-unhide>Show ${nHidden} hidden</button>` : ''}`;
+  };
+  const favRowHTML = isNew && t.type !== 'adjustment' ? `<div class="fav-row" id="fav-row">${favRowInner()}</div>` : '';
   const title = isNew ? (t.type === 'transfer' ? 'New transfer' : 'New transaction') : (t.type === 'adjustment' ? 'Balance adjustment' : 'Edit transaction');
   const m = Modal.open(`${Modal.head(title, isNew ? `Tip: press <b>N</b> anywhere to add one quickly` : `Last edited by ${esc(pname(t.updatedBy || t.createdBy))} · ${relTime(t.updatedAt)}`)}
     <form class="modal-body" id="tx-form" autocomplete="off">
       ${t.type === 'adjustment' ? '' : `<div class="seg full" style="margin-bottom:14px">
         ${[['expense', 'Spending'], ['income', 'Income'], ['transfer', 'Transfer']].map(([v, l]) => `<button type="button" data-t="${v}" class="${t.type === v ? 'on' : ''}">${l}</button>`).join('')}</div>`}
-      <div class="form-grid tx-grid">
+      ${favRowHTML}
+      <div class="form-grid tx-grid ${openMore ? 'more-open' : ''}">
         <label class="field">Amount<div style="display:flex;gap:8px"><input type="text" name="amount" inputmode="decimal" data-money data-nohint autofocus required value="${t.amount !== '' ? fmtInput(t.amount, t.currency) : ''}" placeholder="45.000 or 1,5jt" style="flex:1;min-width:0;font-size:18px;font-weight:700">
           <select name="currency" style="width:84px;flex:none">${CUR_CODES.map((c) => `<option ${t.currency === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
           <span class="hint" id="amt-preview"></span></label>
-        <label class="field">Date<input type="date" name="date" required value="${t.date}"></label>
-        ${t.type === 'adjustment' ? '' : `<div class="field full fee-wrap">
-          <button type="button" class="link-btn ${hasFee ? 'hidden' : ''}" data-fee-open>${icon('plus')} Add admin fee</button>
-          <div class="fee-box ${hasFee ? '' : 'hidden'}">
-            <div class="fee-head"><span>Admin fee</span><button type="button" class="link-btn" data-fee-remove>Remove</button></div>
-            <div class="chip-row">${FEE_CHIPS.map((v) => `<button type="button" class="pick" data-fee="${v}">+${fmtInput(v)}</button>`).join('')}${FEE_CHIPS.slice(0, 2).map((v) => `<button type="button" class="pick" data-fee="${-v}">−${fmtInput(v)}</button>`).join('')}
-              <input type="text" name="fee" inputmode="decimal" data-money data-nohint value="${hasFee ? fmtInput(t.fee, t.currency) : ''}" placeholder="Other, e.g. 3.500 or -1.000" aria-label="Admin fee amount" style="flex:1;min-width:150px"></div>
-            <div class="hint" id="fee-help"></div>
-            <div class="fee-sum" id="fee-sum"></div>
-          </div></div>`}
+        <div class="field date-field"><span>Date</span><div class="date-chips"><button type="button" class="pick" data-day="0">Today</button><button type="button" class="pick" data-day="-1">Yesterday</button><input type="date" name="date" required value="${t.date}" aria-label="Date"></div></div>
         <label class="field full rate-row">Exchange rate<div style="display:flex;gap:8px;align-items:center"><span class="muted nowrap" id="rate-label">1 ${t.currency} = Rp</span><input type="text" name="rate" inputmode="decimal" value="${fmtInput(t.rate || rateOf(t.currency), 'USD')}" style="flex:1"></div><span class="hint">Saved with this transaction. Default comes from Settings.</span></label>
         <div class="field full"><label for="tx-desc">Description</label><div class="ac-wrap"><input type="text" id="tx-desc" name="description" value="${esc(t.description)}" placeholder="e.g. Indomaret, Gojek, Rent" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="desc-ac"><div class="ac-list hidden" id="desc-ac" role="listbox"></div></div></div>
         <label class="field cat-row"><span id="cat-label">Category</span><select name="categoryId"></select><span class="hint cat-hint hidden">A label only: transfers aren't counted as spending or income.</span></label>
+        <label class="field acc-row"><span id="acc-label">Paid from</span><select name="accountId">${accOpts(t.accountId)}</select></label>
         <label class="field goal-row">Towards goal<select name="goalId"><option value="">— none —</option>${goals.map((g) => `<option value="${g.id}" ${t.goalId === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>
         <div class="field full who-row"><span>Who</span><div class="seg full" id="person-seg">${PEOPLE.map((p) => `<button type="button" data-p="${p}"><span class="dot" style="background:${pcolor(p)}"></span>${esc(pname(p))}</button>`).join('')}<button type="button" data-p="${SPLIT}"><span class="dot" style="background:${pcolor('junior')}"></span><span class="dot" style="background:${pcolor('sabit')};margin-left:-6px"></span>Split</button></div></div>
         <div class="field full split-row">
@@ -612,12 +643,8 @@ function openTxForm(existing, preset = {}) {
           </div>
           <span class="hint">Each share counts toward that person's budget and reports. "Paid from" is the account the money actually left.</span>
         </div>
-        <div class="field full payback-row">
-          <label class="check"><input type="checkbox" name="payback" ${t.payback ? 'checked' : ''}> ${icon('transfer')} <span id="payback-label">Paying back partner</span></label>
-          <span class="hint" id="payback-hint"></span>
-        </div>
-        <label class="field acc-row"><span id="acc-label">Paid from</span><select name="accountId">${accOpts(t.accountId)}</select></label>
         <label class="field to-row"><span id="to-label">To account</span><select name="toAccountId">${accOpts(t.toAccountId)}</select></label>
+        <div class="field full settle-row hidden"><label class="check"><input type="checkbox" name="settle" ${t.settle ? 'checked' : ''}> ${icon('transfer')} <span id="settle-label">This settles up between you</span></label><span class="hint">Counts toward "Between you" on the Dashboard. Not spending.</span></div>
         <div class="field full inst-row">
           <span>Pay in</span>
           <div class="chip-row">${[1, 3, 6, 12, 24].map((n) => `<button type="button" class="pick" data-inst="${n}">${n === 1 ? 'Full' : `${n}×`}</button>`).join('')}
@@ -629,12 +656,26 @@ function openTxForm(existing, preset = {}) {
         </div>
         <div class="field full inst-hint hidden"><div class="banner info" style="margin:0">${icon('info')}<div class="grow small"><span id="inst-hint-text"></span></div><button type="button" class="btn sm" data-fix-debt>Set as card</button></div></div>
         <label class="field to-amt-row">Amount received<input type="text" name="toAmount" inputmode="decimal" value="${t.toAmount != null && t.toAmount !== '' ? fmtInput(t.toAmount, 'USD') : ''}" placeholder="only if currencies differ"></label>
-        <label class="field full">Notes<textarea name="notes" rows="2" placeholder="Optional">${esc(t.notes)}</textarea></label>
-        <div class="field full repeat-field">
+        <div class="field full more-row"><button type="button" class="link-btn more-btn" data-more aria-expanded="${openMore}"><span class="more-ic">${icon(openMore ? 'up' : 'down')}</span><span class="more-label">${openMore ? 'Fewer options' : 'More options'}</span><span class="more-sum"></span></button></div>
+        ${t.type === 'adjustment' ? '' : `<div class="field full fee-wrap opt">
+          <button type="button" class="link-btn ${hasFee ? 'hidden' : ''}" data-fee-open>${icon('plus')} Add admin fee</button>
+          <div class="fee-box ${hasFee ? '' : 'hidden'}">
+            <div class="fee-head"><span>Admin fee</span><button type="button" class="link-btn" data-fee-remove>Remove</button></div>
+            <div class="chip-row">${FEE_CHIPS.map((v) => `<button type="button" class="pick" data-fee="${v}">+${fmtInput(v)}</button>`).join('')}${FEE_CHIPS.slice(0, 2).map((v) => `<button type="button" class="pick" data-fee="${-v}">−${fmtInput(v)}</button>`).join('')}
+              <input type="text" name="fee" inputmode="decimal" data-money data-nohint value="${hasFee ? fmtInput(t.fee, t.currency) : ''}" placeholder="Other, e.g. 3.500 or -1.000" aria-label="Admin fee amount" style="flex:1;min-width:150px"></div>
+            <div class="hint" id="fee-help"></div>
+            <div class="fee-sum" id="fee-sum"></div>
+          </div></div>`}
+        <div class="field full payback-row opt">
+          <label class="check"><input type="checkbox" name="payback" ${t.payback ? 'checked' : ''}> ${icon('transfer')} <span id="payback-label">Paying back partner</span></label>
+          <span class="hint" id="payback-hint"></span>
+        </div>
+        <label class="field full opt">Notes<textarea name="notes" rows="2" placeholder="Optional">${esc(t.notes)}</textarea></label>
+        <div class="field full repeat-field opt">
           ${t.repeatOf ? `<span class="hint">${icon('repeat')} Monthly repeat${(() => { const tp = store.get('transactions', t.repeatOf); return tp ? ` of “${esc(tp.description || 'transaction')}”` : ''; })()} · ${esc(fmtMonth(t.repeatMonth || t.date.slice(0, 7), true))}</span>`
     : `<label class="check"><input type="checkbox" name="repeat" ${t.repeat ? 'checked' : ''}> ${icon('repeat')} <span id="repeat-label">Repeats every month</span></label>`}
         </div>
-        <div class="field full flag-field">
+        <div class="field full flag-field opt">
           <label class="check"><input type="checkbox" name="flagged" ${t.flagged ? 'checked' : ''}> ${icon('flag')} Flag for follow-up</label>
           <div class="flag-extra ${t.flagged ? '' : 'hidden'}">
             <div class="chip-row">${FLAG_REASONS.map((r) => `<button type="button" class="pick" data-flagreason="${esc(r)}">${esc(r)}</button>`).join('')}</div>
@@ -710,6 +751,10 @@ function openTxForm(existing, preset = {}) {
       if (pb && !F('toAccountId').value) { const acc = store.all('accounts').find((a) => a.owner === partner && !a.archived && !isDebtAcc(a)); if (acc) F('toAccountId').value = acc.id; }
     }
     show('.to-row', isTr || sav || pb);
+    { const fa = store.get('accounts', F('accountId').value), ta = store.get('accounts', F('toAccountId').value);
+      const cross = isTr && fa && ta && PEOPLE.includes(fa.owner) && PEOPLE.includes(ta.owner) && fa.owner !== ta.owner;
+      show('.settle-row', !!cross);
+      if (cross) $('#settle-label', m).textContent = `This settles up: ${pname(fa.owner)} pays ${pname(ta.owner)} back`; }
     $('#to-label', m).textContent = isTr ? 'To account' : pb ? `Into ${pname(partner)}'s account` : 'Moved into (optional)';
     const fromAcc = store.get('accounts', F('accountId').value), toAcc = store.get('accounts', F('toAccountId').value);
     show('.to-amt-row', (isTr || sav || (type === 'expense' && F('payback').checked && (person === 'junior' || person === 'sabit'))) && !!fromAcc && !!toAcc && toAcc.currency !== cur);
@@ -757,6 +802,54 @@ function openTxForm(existing, preset = {}) {
     } else isum.innerHTML = '';
   };
   fillCats(); refresh();
+  // More options
+  const grid = $('.tx-grid', m);
+  const moreSum = () => {
+    const on = [];
+    if (feeOn && F('fee') && F('fee').value.trim()) on.push('admin fee');
+    if (F('payback').checked) on.push('paying back');
+    if (F('notes').value.trim()) on.push('note');
+    if (F('repeat') && F('repeat').checked) on.push('repeats monthly');
+    if (F('flagged').checked) on.push('flagged');
+    const el = $('.more-sum', m); if (el) el.textContent = !grid.classList.contains('more-open') && on.length ? ` · ${on.join(', ')}` : '';
+  };
+  m.querySelector('[data-more]').onclick = (e) => {
+    const open = !grid.classList.contains('more-open'); grid.classList.toggle('more-open', open);
+    e.currentTarget.setAttribute('aria-expanded', String(open));
+    $('.more-label', m).textContent = open ? 'Fewer options' : 'More options';
+    $('.more-ic', m).innerHTML = icon(open ? 'up' : 'down');
+    moreSum();
+  };
+  form.addEventListener('input', moreSum); form.addEventListener('change', moreSum); moreSum();
+  // Today / Yesterday
+  const dayChips = () => m.querySelectorAll('[data-day]').forEach((b) => b.classList.toggle('on', F('date').value === addDays(todayStr(), +b.dataset.day)));
+  m.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => { F('date').value = addDays(todayStr(), +b.dataset.day); F('date').dispatchEvent(new Event('change', { bubbles: true })); dayChips(); });
+  F('date').addEventListener('change', dayChips); dayChips();
+  // favorites
+  const favRow = $('#fav-row', m);
+  const applyFav = (x) => {
+    if (x.type && x.type !== type && x.type !== 'adjustment') { type = x.type; m.querySelectorAll('[data-t]').forEach((b) => b.classList.toggle('on', b.dataset.t === type)); fillCats(); }
+    F('description').value = x.text;
+    if (x.categoryId && store.get('categories', x.categoryId)) { F('categoryId').value = x.categoryId; catTouched = true; }
+    if (x.person) { person = x.person === 'shared' || x.person === SPLIT ? SPLIT : x.person; if (person === SPLIT) ratio = clamp(Number(x.splitJunior ?? 0.5), 0, 1); }
+    if (x.accountId && store.get('accounts', x.accountId)) { F('accountId').value = x.accountId; accTouched = true; }
+    if (x.toAccountId && store.get('accounts', x.toAccountId)) F('toAccountId').value = x.toAccountId;
+    F('currency').value = x.cur || 'IDR'; if ((x.cur || 'IDR') !== 'IDR') F('rate').value = fmtInput(rateOf(x.cur), 'USD');
+    F('amount').value = fmtInput(Math.abs(Number(x.amt) || 0), x.cur || 'IDR');
+    refresh(); F('amount').focus(); try { F('amount').select(); } catch (e) { /* ignore */ }
+  };
+  const favRender = () => { if (favRow) favRow.innerHTML = favRowInner(); };
+  if (favRow) favRow.addEventListener('click', (e) => {
+    const list = favList();
+    const hide = e.target.closest('[data-fav-hide]');
+    if (hide) { const x = list[+hide.dataset.favHide]; cfg.favHidden = [...new Set([...(cfg.favHidden || []), x.k])]; cfg.favPinned = (cfg.favPinned || []).filter((k) => k !== x.k); saveCfg(); favRender(); return; }
+    if (e.target.closest('[data-fav-edit]')) { favState.editing = !favState.editing; favRender(); return; }
+    if (e.target.closest('[data-fav-unhide]')) { cfg.favHidden = []; saveCfg(); favRender(); return; }
+    const chip = e.target.closest('[data-fav]'); if (!chip) return;
+    const x = list[+chip.dataset.fav]; if (!x) return;
+    if (favState.editing) { const p = new Set(cfg.favPinned || []); if (p.has(x.k)) p.delete(x.k); else p.add(x.k); cfg.favPinned = [...p]; saveCfg(); favRender(); return; }
+    applyFav(x);
+  });
   F('flagged').addEventListener('change', () => { show('.flag-extra', F('flagged').checked); });
   F('payback').addEventListener('change', refresh);
   const repeatLabel = () => { const el = $('#repeat-label', m); if (el) el.textContent = `Repeats every month${F('date').value ? ` (reminder on day ${Number(F('date').value.slice(8, 10))})` : ''}`; };
@@ -799,6 +892,7 @@ function openTxForm(existing, preset = {}) {
   F('currency').onchange = () => { F('rate').value = fmtInput(rateOf(F('currency').value), 'USD'); refresh(); };
   F('amount').oninput = refresh; F('rate').oninput = refresh;
   F('accountId').onchange = () => {
+    accTouched = true;
     const a = store.get('accounts', F('accountId').value);
     if (a && isNew && !F('amount').value) { F('currency').value = a.currency; F('rate').value = fmtInput(rateOf(a.currency), 'USD'); }
     refresh();
@@ -839,6 +933,8 @@ function openTxForm(existing, preset = {}) {
   ac.addEventListener('mousedown', (e) => e.preventDefault());
   ac.addEventListener('click', (e) => { const it = e.target.closest('[data-ac]'); if (it) acPick(+it.dataset.ac); });
   F('description').addEventListener('change', () => {
+    const info = descInfo.get(F('description').value.trim().toLowerCase());
+    if (isNew && !accTouched && info && info.accountId && store.get('accounts', info.accountId) && info.type === type) { F('accountId').value = info.accountId; if (info.toAccountId && store.get('accounts', info.toAccountId)) F('toAccountId').value = info.toAccountId; refresh(); }
     if (catTouched) return;
     const s = suggestCategory(F('description').value, type === 'income' ? 'income' : 'expense');
     if (s) { F('categoryId').value = s; refresh(); }
@@ -870,6 +966,7 @@ function openTxForm(existing, preset = {}) {
       flaggedBy: F('flagged').checked ? (t.flagged ? t.flaggedBy || me() : me()) : '',
       flaggedAt: F('flagged').checked ? (t.flagged ? t.flaggedAt || stamp() : stamp()) : '',
       goalId: m.querySelector('.goal-row').classList.contains('hidden') ? '' : F('goalId').value,
+      settle: type === 'transfer' && !m.querySelector('.settle-row').classList.contains('hidden') && F('settle').checked,
       fee,
     };
     const instVisible = !m.querySelector('.inst-row').classList.contains('hidden');
@@ -916,9 +1013,93 @@ function openTxForm(existing, preset = {}) {
     toast('Transaction deleted.', '', { label: 'Undo', fn: () => store.upsert('transactions', copy) });
   };
   const dup = m.querySelector('[data-dup]');
-  if (dup) dup.onclick = () => { const rec = collect(); if (!rec) return; Modal.close(); const { id, createdAt, createdBy, updatedAt, updatedBy, importId, ...rest } = rec; void id; void createdAt; void createdBy; void updatedAt; void updatedBy; void importId; openTxForm(null, { ...rest, date: todayStr() }); };
+  if (dup) dup.onclick = () => { const rec = collect(); if (!rec) return; Modal.close(); openTxForm(null, dupPreset(rec)); };
 }
 
+/* ---------------- between you / settle up ---------------- */
+function openBetweenDetails() {
+  const B = betweenYou();
+  const owes = B.v > 0 ? 'sabit' : 'junior', gets = partnerOf(owes);
+  const line = (x) => `<div class="list-row" data-action="edit-tx" data-id="${x.t.id}" style="cursor:pointer"><div class="grow"><div class="title">${x.kind === 'settle' ? `${icon('check')} Settle up` : txTitle(x.t)}</div>
+    <div class="meta">${fmtDate(x.t.date, false)} · ${x.kind === 'settle' ? `${esc(pname(x.payer))} paid ${esc(pname(partnerOf(x.payer)))}` : `${esc(pname(x.payer))} paid${x.kind === 'split' ? ` · split ${splitLabel(x.t)}` : ` for ${esc(pname(x.debtor))}`}`}</div></div>
+    <div class="amount ${x.d > 0 ? '' : ''}">${x.kind === 'settle' ? '−' : '+'}${money(x.amt)}<span class="orig">${x.kind === 'settle' ? `${esc(pname(x.debtor))} paid back` : `${esc(pname(x.debtor))} owes`}</span></div></div>`;
+  const m = Modal.open(`${Modal.head('Between you', Math.abs(B.v) < 1 ? "You're all square" : `${esc(pname(owes))} owes ${esc(pname(gets))} ${money(Math.abs(B.v))}`)}
+    <div class="modal-body">
+      <label class="field">Counting from<input type="date" id="settle-from" value="${B.from}"></label>
+      <p class="hint">Who paid = the owner of the account the money left. Split spending: the partner owes their share. Spending marked as the partner's: they owe all of it. "Paying back" entries such as the rent share aren't counted, and neither are joint accounts.${B.skipped ? ` <b>${B.skipped} split item${B.skipped === 1 ? ' has' : 's have'} no personal account</b> and ${B.skipped === 1 ? "isn't" : "aren't"} counted.` : ''}</p>
+      <div class="list">${B.items.map(line).join('') || '<div class="muted small">Nothing shared since this date.</div>'}</div>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span><button class="btn" data-close>Close</button>${Math.abs(B.v) >= 1 ? `<button class="btn primary" data-settle>${icon('check')} Settle up</button>` : ''}</div>`);
+  const sf = $('#settle-from', m);
+  sf.onchange = () => { if (isValidDate(sf.value)) { store.updateSettings({ settleFrom: sf.value }); Modal.close(); openBetweenDetails(); } };
+  const b = m.querySelector('[data-settle]'); if (b) b.onclick = () => { Modal.close(); openSettleUp(); };
+}
+function openSettleUp() {
+  const B = betweenYou(); const amt = Math.abs(B.v);
+  if (amt < 1) { toast("You're all square — nothing to settle."); return; }
+  const debtor = B.v > 0 ? 'sabit' : 'junior', creditor = partnerOf(debtor);
+  const own = (p) => store.all('accounts').filter((a) => a.owner === p && !a.archived && !isDebtAcc(a));
+  const opts = (p, sel) => own(p).map((a) => `<option value="${a.id}" ${a.id === sel ? 'selected' : ''}>${esc(a.name)}</option>`).join('');
+  const fromDef = (own(debtor).find((a) => a.id === lastAccountFor(debtor)) || own(debtor)[0] || {}).id;
+  const toDef = (own(creditor).find((a) => a.id === lastAccountFor(creditor)) || own(creditor)[0] || {}).id;
+  const m = Modal.open(`${Modal.head('Settle up', `${esc(pname(debtor))} pays ${esc(pname(creditor))}`)}
+    <form class="modal-body" id="settle-form">
+      <label class="field">Amount<input type="text" name="amount" inputmode="decimal" data-money value="${fmtInput(amt)}"><span class="hint">Owed now: ${money(amt)}. A smaller amount is fine (partial settle-up).</span></label>
+      <label class="field">From ${esc(pname(debtor))}'s account<select name="from">${opts(debtor, fromDef)}</select></label>
+      <label class="field">Into ${esc(pname(creditor))}'s account<select name="to">${opts(creditor, toDef)}</select></label>
+      <label class="field">Date<input type="date" name="date" value="${todayStr()}"></label>
+      <p class="hint">Recorded as a transfer marked "settle up". It moves money between your accounts and isn't counted as spending.</p>
+    </form>
+    <div class="modal-foot"><span class="spacer"></span><button class="btn" data-close>Cancel</button><button class="btn primary" data-save>${icon('check')} Record</button></div>`);
+  const f = $('#settle-form', m);
+  const save = () => {
+    const a = parseAmount(f.elements.amount.value);
+    if (!isFinite(a) || a <= 0) { toast('Enter the amount paid.', 'bad'); return; }
+    if (!f.elements.from.value || !f.elements.to.value) { toast(`Add an account for ${pname(debtor)} and ${pname(creditor)} on the Balance page first.`, 'bad'); return; }
+    if (!isValidDate(f.elements.date.value)) { toast('Pick a valid date.', 'bad'); return; }
+    store.upsert('transactions', { id: uid('t_'), type: 'transfer', settle: true, date: f.elements.date.value, amount: Math.round(a), currency: 'IDR', rate: 1, description: `Settle up · ${pname(debtor)} → ${pname(creditor)}`, categoryId: '', person: debtor, accountId: f.elements.from.value, toAccountId: f.elements.to.value, notes: '' });
+    Modal.close();
+    const left = Math.abs(betweenYou().v);
+    toast(left < 1 ? "Settled — you're all square." : `Recorded. Still owed: ${money(left)}.`);
+  };
+  f.onsubmit = (e) => { e.preventDefault(); save(); };
+  m.querySelector('[data-save]').onclick = save;
+}
+
+/** Open the add form from link parameters. Everything is optional; unknown names are ignored. */
+function openAddFromLink(q) {
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const preset = {};
+  const type = norm(q.get('type'));
+  if (['expense', 'income', 'transfer'].includes(type)) preset.type = type;
+  const amt = q.get('amount') || q.get('amt');
+  if (amt) { const a = parseAmount(amt); if (isFinite(a) && a > 0) preset.amount = a; }
+  const desc = (q.get('desc') || q.get('description') || '').trim();
+  if (desc) {
+    preset.description = desc;
+    // same description used before → reuse its category and account
+    const prev = [...store.activeTx()].filter((t) => norm(t.description) === norm(desc) && t.type !== 'adjustment').sort((a, b) => b.date.localeCompare(a.date))[0];
+    if (prev) { preset.categoryId = prev.categoryId; if (prev.accountId) preset.accountId = prev.accountId; if (!preset.type) preset.type = prev.type; }
+  }
+  const cat = norm(q.get('cat') || q.get('category'));
+  if (cat) { const cc = store.categories().find((x) => norm(x.name) === cat || x.id === cat) || store.categories().find((x) => norm(x.name).includes(cat)); if (cc) preset.categoryId = cc.id; }
+  const acc = norm(q.get('acc') || q.get('account'));
+  if (acc) { const a = store.all('accounts').find((x) => norm(x.name) === acc || x.id === acc) || store.all('accounts').find((x) => norm(x.name).includes(acc)); if (a) preset.accountId = a.id; }
+  const who = norm(q.get('who') || q.get('person'));
+  if (who) {
+    const p = who === 'split' ? SPLIT : PEOPLE.find((x) => x === who || norm(pname(x)) === who);
+    if (p) { preset.person = p; if (p === SPLIT) preset.splitJunior = 0.5; if (!preset.accountId) preset.accountId = lastAccountFor(p); }
+  }
+  const date = q.get('date'); if (date && isValidDate(date)) preset.date = date;
+  openTxForm(null, preset);
+  if (!gh.configured()) toast('This browser isn\'t connected to GitHub — this entry will stay on this device only.', 'bad');
+}
+/** A copy of a transaction for "Duplicate": new id, dated today, without flags, repeats or sync metadata. */
+function dupPreset(rec) {
+  const { id, createdAt, createdBy, updatedAt, updatedBy, importId, repeatOf, repeatMonth, flagged, flagNote, flaggedBy, flaggedAt, ...rest } = rec;
+  void id; void createdAt; void createdBy; void updatedAt; void updatedBy; void importId; void repeatOf; void repeatMonth; void flagged; void flagNote; void flaggedBy; void flaggedAt;
+  return { ...rest, repeat: null, date: todayStr() };
+}
 /** "2,95%" → 2,95% of the principal; "50.000" → 50000; empty → 0. */
 function parseInterest(v, principal) {
   const s = String(v || '').trim(); if (!s) return 0;

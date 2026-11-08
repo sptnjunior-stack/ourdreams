@@ -3,7 +3,7 @@
  * core.js — utilities, icons, data model, store and calculations
  * ===================================================================== */
 
-const APP_VERSION = '1.13.0';
+const APP_VERSION = '1.14.0';
 const LS = { data: 'cbt.data.v1', cfg: 'cbt.config.v1', ui: 'cbt.ui.v1', sync: 'cbt.sync.v1' };
 
 /* ---------------- utils ---------------- */
@@ -941,6 +941,41 @@ function cardReminders(ref = todayStr(), daysAhead = 7) {
     }
   }
   return out.sort((x, y) => x.days - y.days);
+}
+
+/* ---- between you: who owes whom ----
+ * Counted from settings.settleFrom (default 1 Nov 2026). The payer is the owner of the account the money left.
+ * Split spending: the partner owes their share. Spending marked as the partner's: the partner owes all of it.
+ * "Paying back" entries (like the rent share) stay outside; "Settle up" transfers (t.settle) reduce what's owed.
+ * Joint accounts and spending without an account aren't counted. v > 0 → Sabit owes Junior. */
+const SETTLE_FROM_DEFAULT = '2026-11-01';
+const settleFrom = () => (store.data.settings && store.data.settings.settleFrom) || SETTLE_FROM_DEFAULT;
+function betweenYou(from = settleFrom()) {
+  return store.memo('between:' + from, () => {
+    const items = []; let v = 0, skipped = 0;
+    const accs = store.accMap();
+    for (const t of store.activeTx()) {
+      if (t.date < from) continue;
+      if (t.type === 'transfer' && t.settle) {
+        const fa = accs.get(t.accountId), ta = accs.get(t.toAccountId);
+        if (!fa || !ta || !PEOPLE.includes(fa.owner) || !PEOPLE.includes(ta.owner) || fa.owner === ta.owner) continue;
+        const amt = toIDR(t, principalAmt(t));
+        const d = fa.owner === 'sabit' ? -amt : amt; v += d;
+        items.push({ t, kind: 'settle', payer: fa.owner, debtor: fa.owner, amt, d });
+        continue;
+      }
+      if (t.type !== 'expense' || t.payback) continue;
+      const a = accs.get(t.accountId);
+      if (!a || !PEOPLE.includes(a.owner)) { if (isSplit(t)) skipped++; continue; }
+      const payer = a.owner, other = partnerOf(payer);
+      const share = shareOf(t, other); if (!share) continue;
+      const amt = toIDR(t, outflowAmt(t)) * share;
+      const d = payer === 'junior' ? amt : -amt; v += d;
+      items.push({ t, kind: isSplit(t) ? 'split' : 'paid-for', payer, debtor: other, amt, d });
+    }
+    items.sort((x, y) => y.t.date.localeCompare(x.t.date));
+    return { v: Math.round(v), items, skipped, from };
+  });
 }
 
 /* ---- upcoming bills (next 30 days) ----

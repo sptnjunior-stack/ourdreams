@@ -429,6 +429,12 @@ Views.dashboard = () => {
 
   return `
   ${notesHTML}
+  ${(() => {
+    const B2 = betweenYou(); if (!B2.items.length && !B2.skipped) return '';
+    const owes = B2.v > 0 ? 'sabit' : 'junior', gets = partnerOf(owes), amt = Math.abs(B2.v);
+    return `<div class="card between-card"><div class="between-main">${icon('transfer')}<div class="grow">${amt < 1 ? `<b>You're all square</b> <span class="muted small">since ${fmtDate(B2.from)}</span>` : `<b>${esc(pname(owes))} owes ${esc(pname(gets))} ${money(amt)}</b> <span class="muted small">· shared costs since ${fmtDate(B2.from, false)}</span>`}</div>
+      <button class="btn sm" data-action="between-details">Details</button>${amt >= 1 ? `<button class="btn sm primary" data-action="settle-up">Settle up</button>` : ''}</div></div>`;
+  })()}
   <div class="grid kpis">
     ${kpi('Income', money(S.income, { compact: true }), deltaHTML(S.income, P.income, true))}
     ${kpi('Spending', money(S.spend, { compact: true }), deltaHTML(S.spend, P.spend, false))}
@@ -675,7 +681,7 @@ Views.spending = () => {
         <td class="d-acc small muted">${esc((store.accMap().get(t.accountId) || {}).name || '')}</td>
         <td class="d-meta small muted">${fmtDate(t.date, false)} ${txCatCell(t)} ${txPersonChip(t)}</td>
         <td class="r nowrap d-amt">${amountCell(t)}</td>
-        <td class="r d-act nowrap"><button class="btn ghost sm icon flag-btn ${t.flagged ? 'on' : ''}" data-action="flag-tx" data-id="${t.id}" aria-label="${t.flagged ? 'Resolve flag' : 'Flag for follow-up'}" title="${t.flagged ? 'Resolve flag' : 'Flag for follow-up'}">${icon('flag')}</button><button class="btn ghost sm icon" data-action="edit-tx" data-id="${t.id}" aria-label="Edit">${icon('edit')}</button></td>
+        <td class="r d-act nowrap"><button class="btn ghost sm icon flag-btn ${t.flagged ? 'on' : ''}" data-action="flag-tx" data-id="${t.id}" aria-label="${t.flagged ? 'Resolve flag' : 'Flag for follow-up'}" title="${t.flagged ? 'Resolve flag' : 'Flag for follow-up'}">${icon('flag')}</button>${isAdj(t) ? '' : `<button class="btn ghost sm icon" data-action="dup-tx" data-id="${t.id}" aria-label="Duplicate" title="Duplicate (dated today)">${icon('copy')}</button>`}<button class="btn ghost sm icon" data-action="edit-tx" data-id="${t.id}" aria-label="Edit">${icon('edit')}</button></td>
       </tr>`).join('')}</tbody></table></div>
       ${txs.length > shown.length ? `<div style="text-align:center;margin-top:12px"><button class="btn" data-action="tx-more">Show more (${txs.length - shown.length} left)</button></div>` : ''}`
     : ui.tx.flagged ? emptyState('Nothing flagged here', 'No flagged transactions match these filters. Flag a row with the flag icon to follow up on it later.')
@@ -1042,6 +1048,16 @@ Views.settings = () => {
         <div class="seg">${[['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<button class="${cfg.theme === v ? 'on' : ''}" data-action="set-theme" data-v="${v}">${l}</button>`).join('')}</div>
       </div>
       <div class="hint" style="margin-top:10px">New transactions default to this person, and GitHub commits are labelled with their name.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Quick add</h3></div>
+      <div class="kv">
+        <span>Open the add form when the Home Screen app starts</span>
+        <div class="seg">${[['off', 'Off'], ['on', 'On']].map(([k, l]) => `<button class="${(cfg.startAdd ? 'on' : 'off') === k ? 'on' : ''}" data-action="set-startadd" data-v="${k}">${l}</button>`).join('')}</div>
+      </div>
+      <div class="hint" style="margin-top:10px">Add-form link for bookmarks and iOS Shortcuts: <code>${esc(location.origin + location.pathname)}#add?amount=17000&amp;desc=Lunch</code> <button class="linkbtn" data-action="copy-add-link">Copy</button><br>
+      Optional: <code>cat=</code> category, <code>acc=</code> account, <code>who=junior|sabit|split</code>, <code>type=income|transfer</code>. The form opens filled in; you check it and tap Save. See README → "Quick add" for the Shortcut steps.</div>
     </div>
 
     <div class="card" style="grid-column:1/-1">

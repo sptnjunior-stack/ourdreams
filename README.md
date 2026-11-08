@@ -117,6 +117,23 @@ No category column? The importer guesses from the description (Indomaret → Gro
 - **Committed money:** installment portions and monthly repeats due in a month are "committed". Budget shows Plan · Committed · Spent freely · Left. Amber = the plan is lower than what's already committed (tap **Raise plan to cover**); red = new spending went over. Adding an installment purchase shows how it fits the plan before you save.
 - **Cash available:** the Dashboard shows bank, e-wallet and cash money, with "after upcoming bills" (card bills and monthly repeats due in the next 30 days) and what's owed on cards.
 
+### Faster logging (v1.14)
+- **Short form:** Amount, Description, Category, Paid from, Who and Date (Today / Yesterday chips). Admin fee, paying back, notes, repeat and flag sit under **More options**, which opens by itself when a transaction already uses one of them. Split shares, installments and "Moved into" still appear automatically when they apply.
+- **Favorites:** your most-used entries from the last 60 days appear as chips at the top of a new transaction. Tap one to fill everything in, check the amount, save. **Edit** lets you pin or hide chips (per device).
+- **Remembers the account:** typing a description you've used before fills in its category and the account you used last time.
+- **Duplicate:** the copy icon on any Log row (or in the edit form) opens a copy dated today. **Save & add another** keeps date, person and account for the next entry.
+
+### Quick add
+- **Link:** `…/#add?amount=17000&desc=Lunch` opens the add form filled in. Optional: `cat=` category name, `acc=` account name, `who=junior|sabit|split`, `type=income|transfer`, `date=YYYY-MM-DD`. If the description was used before, its category and account are reused. Bookmark `…/#add` on the Mac for one-click adding.
+- **Home Screen app:** Settings → Quick add → *Open the add form when the Home Screen app starts*.
+- **iOS Shortcut "Log expense":** Shortcuts → **+** → add **Ask for Input** (Number, "Amount?") → **Ask for Input** (Text, "What for?") → **URL Encode** (the text) → **URL** `https://<your-site>/#add?amount=[Provided Input]&desc=[URL Encoded Text]` → **Open URLs**. Then ⓘ → **Add to Home Screen** (or use Siri / the Action button). Shortcuts opens links in **Safari**, which keeps its own storage, separate from the Home Screen app: connect GitHub sync in Safari once (paste your token) so these entries reach the app. If Safari isn't connected, the form warns you.
+
+### Between you (who owes whom)
+- The Dashboard shows e.g. "Sabit owes Junior Rp 412.500", counted from **1 Nov 2026** (change it under **Details**).
+- Who paid = the owner of the account the money left. Split spending: the partner owes their share. Spending marked as the partner's: they owe all of it. Joint accounts, spending without an account and "paying back" entries (like the rent share) aren't counted.
+- **Settle up** records a transfer between your accounts marked "settle up" (not spending); partial amounts are fine. A transfer between Junior's and Sabit's accounts can also be ticked as *This settles up*.
+- Treats: if you pay for the other's personal item as a gift, log it as your own spending (e.g. Gifts), otherwise it shows as owed.
+
 ### How syncing works
 - Every change is saved in the browser immediately and pushed to `budget-data.json` about 1.5 s later. Each save is a **commit**, so the data repo's history is a full audit trail and backup.
 - The app pulls the latest data when you open or return to the tab and every 90 s.
