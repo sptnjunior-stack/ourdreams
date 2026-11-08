@@ -297,6 +297,7 @@ const App = {
       case 'export-json': downloadFile(`budget-backup-${todayStr()}.json`, JSON.stringify(store.data, null, 1), 'application/json'); cfg.lastBackup = new Date().toISOString(); saveCfg(); this.render(); break;
       case 'local-snooze': cfg.localSnooze = new Date(Date.now() + 86400e3).toISOString(); saveCfg(); this.render(); break;
       case 'dash-trend': ui.dashTrend = v; this.render(); break;
+      case 'dash-gran': ui.dashGran = v; saveUI(); this.render(); break;
       case 'filter-cat': this.setCatFilter(id); break;
       case 'filter-person': this.setFilter({ person: id }); break;
       case 'f-person': this.setFilter({ person: v }); break;

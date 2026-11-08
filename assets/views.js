@@ -52,21 +52,40 @@ function hexA(hex, a) {
 }
 
 /* Time buckets for trend charts */
-function buckets(f) {
-  const days = daysBetween(f.from, f.to) + 1;
+const autoUnit = (f) => { const days = daysBetween(f.from, f.to) + 1; return days <= 45 ? 'day' : days <= 190 ? 'week' : 'month'; };
+function buckets(f, force) {
+  const unit = force || autoUnit(f);
   const out = [];
-  if (days <= 45) {
-    for (let d = f.from; d <= f.to; d = addDays(d, 1)) out.push({ key: d, label: fmtDate(d, false), from: d, to: d });
+  if (unit === 'day') {
+    for (let d = f.from; d <= f.to; d = addDays(d, 1)) out.push({ key: d, label: fmtDate(d, false), range: fmtDate(d), from: d, to: d });
     return { unit: 'day', list: out, keyOf: (date) => date };
   }
-  if (days <= 190) {
+  if (unit === 'week') {
     const start = parseDateStr(f.from); const dow = (start.getDay() + 6) % 7; // Monday start
     let d = addDays(f.from, -dow);
-    while (d <= f.to) { const e = addDays(d, 6); out.push({ key: d, label: fmtDate(d < f.from ? f.from : d, false), from: d, to: e }); d = addDays(d, 7); }
+    while (d <= f.to) {
+      const e = addDays(d, 6); const a = d < f.from ? f.from : d, z = e > f.to ? f.to : e;
+      out.push({ key: d, label: fmtDate(a, false), range: a === z ? fmtDate(a) : `${fmtDate(a, false)} – ${fmtDate(z, false)}`, from: d, to: e });
+      d = addDays(d, 7);
+    }
     return { unit: 'week', list: out, keyOf: (date) => { const x = parseDateStr(date); const w = (x.getDay() + 6) % 7; return addDays(date, -w); } };
   }
-  for (const ym of monthsBetween(f.from.slice(0, 7), f.to.slice(0, 7))) out.push({ key: ym, label: fmtMonth(ym), from: `${ym}-01`, to: endOfMonth(ym) });
+  for (const ym of monthsBetween(f.from.slice(0, 7), f.to.slice(0, 7))) out.push({ key: ym, label: fmtMonth(ym), range: fmtMonth(ym, true), from: `${ym}-01`, to: endOfMonth(ym) });
   return { unit: 'month', list: out, keyOf: (date) => date.slice(0, 7) };
+}
+/* Dashboard chart: Days / Weeks / Months toggle (ui.dashGran; 'auto' follows the date range).
+ * A short range is widened so the chart has something to compare: weeks → last 8 weeks, months → last 6 months. */
+function trendView(f) {
+  const auto = autoUnit(f);
+  const unit = ['day', 'week', 'month'].includes(ui.dashGran) ? ui.dashGran : auto;
+  const days = daysBetween(f.from, f.to) + 1;
+  let r = f, widened = '';
+  if (unit === 'month' && monthsBetween(f.from.slice(0, 7), f.to.slice(0, 7)).length < 3) {
+    const end = f.to.slice(0, 7); r = { ...f, from: `${addMonths(end, -5)}-01`, to: endOfMonth(end) }; widened = `the last 6 months up to ${fmtMonth(end, true)}`;
+  } else if (unit === 'week' && days < 28) {
+    r = { ...f, from: addDays(f.to, -55), to: f.to }; widened = `the last 8 weeks up to ${fmtDate(f.to)}`;
+  }
+  return { unit, auto, r, widened };
 }
 function prevRange(f) {
   let r;
@@ -247,6 +266,12 @@ function darken(hex, amt = 0.45) {
   return `rgb(${f((n >> 16) & 255)},${f((n >> 8) & 255)},${f(n & 255)})`;
 }
 /** Striped fill for the over-allowance part of a bar: darker shade with stripes of the person's colour, readable in light and dark mode. */
+function trendScrollToNow(bk) {
+  const sc = document.getElementById('trend-scroll'); if (!sc || sc.scrollWidth <= sc.clientWidth + 2) return;
+  const t = todayStr(); let i = bk.list.findIndex((b) => t >= b.from && t <= b.to);
+  if (i < 0) i = t > bk.list[bk.list.length - 1].to ? bk.list.length - 1 : 0;
+  sc.scrollLeft = Math.max(0, (sc.scrollWidth * (i + 0.5)) / bk.list.length - sc.clientWidth * 0.7);
+}
 function overPattern(hex) {
   try {
     const cv = document.createElement('canvas'); cv.width = 8; cv.height = 8;
@@ -258,8 +283,8 @@ function overPattern(hex) {
   } catch (e) { return darken(hex); }
 }
 /** Option A data: flexible spending per person per day (or week/month) vs the daily allowance from the budget. */
-function allowanceData(f, lines) {
-  const bk = buckets(f);
+function allowanceData(f, lines, unit) {
+  const bk = buckets(f, unit);
   const idx = new Map(bk.list.map((b, i) => [b.key, i]));
   const people = f.person === 'junior' || f.person === 'sabit' ? [f.person] : PEOPLE;
   const spent = {}, allow = {};
@@ -336,8 +361,13 @@ Views.dashboard = () => {
   const catList = Object.entries(S.byCat).sort((a, b) => b[1] - a[1]);
 
   // Option A summary (shown above the chart)
-  const A = allowanceData(f, lines);
+  const TV = trendView(f);
+  const tLines = TV.widened ? filteredLines(TV.r) : lines;
+  const A = allowanceData(TV.r, tLines, TV.unit);
   const unitWord = A.bk.unit;
+  const unitTitle = { day: 'Daily', week: 'Weekly', month: 'Monthly' }[TV.unit];
+  const perBar = (ui.dashTrend === 'flow' ? 2 : A.people.length) * 14 + 12;
+  const chartMin = A.bk.list.length * perBar;
   const summaryHTML = ui.dashTrend === 'flow' ? '' : !A.hasPlan
     ? `<div class="over-summary"><span class="muted small">${f.person === SPLIT ? 'Split items have no allowance of their own. Pick Everyone, Junior or Sabit to compare with your budget.' : 'No flexible budget for this period yet. Set amounts for day-to-day categories on the <a href="#budget">Budget</a> page to see each person\'s daily allowance.'}</span></div>`
     : `<div class="over-summary">${A.summary.map((s) => `<span class="os-item ${s.n ? 'is-over' : 'is-ok'}"><span class="dot" style="background:${pcolor(s.p)}"></span><b>${esc(pname(s.p))}</b> ${s.n ? `over on ${s.n} of ${s.counted} ${unitWord}${s.counted === 1 ? '' : 's'} <span class="os-amt">+${money(s.over, { compact: true })}</span>` : `within allowance on all ${s.counted} ${unitWord}${s.counted === 1 ? '' : 's'}`}</span>`).join('')}</div>`;
@@ -392,17 +422,19 @@ Views.dashboard = () => {
 
   <div class="grid cols-2-1 section-gap">
     <div class="card">
-      <div class="card-head"><h3>${ui.dashTrend === 'flow' ? 'Income vs spending' : 'Daily spending vs allowance'}</h3>
+      <div class="card-head"><h3>${ui.dashTrend === 'flow' ? `${unitTitle} income vs spending` : `${unitTitle} spending vs allowance`}</h3>
         <div class="right"><div class="seg">
           <button class="${ui.dashTrend !== 'flow' ? 'on' : ''}" data-action="dash-trend" data-v="allow">vs allowance</button>
           <button class="${ui.dashTrend === 'flow' ? 'on' : ''}" data-action="dash-trend" data-v="flow">Income vs spending</button>
         </div></div></div>
+      <div class="trend-tools"><div class="seg sm" role="group" aria-label="Group bars by">${[['day', 'Days'], ['week', 'Weeks'], ['month', 'Months']].map(([k, l]) => `<button class="${TV.unit === k ? 'on' : ''}" data-action="dash-gran" data-v="${k}" aria-pressed="${TV.unit === k}">${l}</button>`).join('')}</div>
+        ${TV.widened ? `<span class="small muted">Showing ${TV.widened}</span>` : ''}</div>
       ${summaryHTML}
       ${ui.dashTrend === 'flow' ? '' : `<div class="lg-row">${A.people.map((p) => `<span><span class="sw" style="background:${pcolor(p)}"></span>${esc(pname(p))}</span>`).join('')}
         <span><span class="sw" style="background:repeating-linear-gradient(135deg, ${darken(pcolor(A.people[0]), 0.5)} 0 3px, ${pcolor(A.people[0])} 3px 5px)"></span>Darker striped part = over allowance</span>
         <span><span class="sw sw-line"></span>Allowance</span></div>`}
-      <div class="chart-box tall"><canvas id="ch-trend"></canvas></div>
-      ${ui.dashTrend === 'flow' ? '' : `<div class="hint" style="margin-top:6px">Day-to-day (flexible) spending only. Fixed bills like rent, installments and savings are checked monthly in Budget vs actual. Change which categories are fixed on the <a href="#categories">Categories</a> page.</div>`}
+      <div class="chart-scroll" id="trend-scroll"><div class="chart-box tall" style="--chart-min:${chartMin}px"><canvas id="ch-trend"></canvas></div></div>
+      ${ui.dashTrend === 'flow' ? '' : `<div class="hint" style="margin-top:6px">${TV.unit === 'day' ? '' : `Each bar is one ${TV.unit}; the allowance mark is the daily allowance × the days in that ${TV.unit}. `}Day-to-day (flexible) spending only. Fixed bills like rent, installments and savings are checked monthly in Budget vs actual. Change which categories are fixed on the <a href="#categories">Categories</a> page.</div>`}
     </div>
     <div class="card">
       <div class="card-head"><h3>By category</h3><span class="sub">tap to filter</span></div>
@@ -460,17 +492,22 @@ Views.dashboard.after = () => {
   const lines = filteredLines(f);
   const S = summarize(lines);
   const c = themeColors();
+  const TV = trendView(f);
+  const tLines = TV.widened ? filteredLines(TV.r) : lines;
   if (ui.dashTrend === 'flow') {
-    const bk = buckets(f);
+    const bk = buckets(TV.r, TV.unit);
     const idx = new Map(bk.list.map((b, i) => [b.key, i]));
     const inc = new Array(bk.list.length).fill(0), out = new Array(bk.list.length).fill(0);
-    for (const l of lines) { const i = idx.get(bk.keyOf(l.date)); if (i === undefined) continue; if (l.type === 'income') inc[i] += l.v; else if (l.type === 'expense') out[i] += l.v; }
+    for (const l of tLines) { const i = idx.get(bk.keyOf(l.date)); if (i === undefined) continue; if (l.type === 'income') inc[i] += l.v; else if (l.type === 'expense') out[i] += l.v; }
+    const fo = baseChartOptions();
+    fo.plugins.tooltip = { ...(fo.plugins.tooltip || {}), mode: 'index', intersect: false, callbacks: { ...((fo.plugins.tooltip || {}).callbacks || {}), title: (items) => (items[0] ? bk.list[items[0].dataIndex].range : '') } };
     Charts.make('ch-trend', { type: 'bar', data: { labels: bk.list.map((b) => b.label), datasets: [
       { label: 'Income', data: inc, backgroundColor: hexA(ccol('income'), 0.8), borderRadius: 4 },
       { label: 'Spending', data: out, backgroundColor: hexA(ccol('spend'), 0.85), borderRadius: 4 },
-    ] }, options: baseChartOptions() });
+    ] }, options: fo });
+    trendScrollToNow(bk);
   } else {
-    const A = allowanceData(f, lines);
+    const A = allowanceData(TV.r, tLines, TV.unit);
     const datasets = [];
     A.people.forEach((p) => {
       datasets.push({ label: pname(p), data: A.spent[p].map((v, i) => (A.allow[p][i] > 0 ? Math.min(v, A.allow[p][i]) : v)), backgroundColor: pcolor(p), stack: p, _p: p, _part: 'in' });
@@ -499,6 +536,7 @@ Views.dashboard.after = () => {
     o.plugins.tooltip = {
       mode: 'index', intersect: false, filter: (it) => it.dataset._part === 'in',
       callbacks: {
+        title: (items) => (items[0] ? A.bk.list[items[0].dataIndex].range : ''),
         label: (ctx) => {
           const p = ctx.dataset._p, i = ctx.dataIndex, v = A.spent[p][i], a = A.allow[p][i];
           if (!a) return `${pname(p)}: ${money(v)}`;
@@ -507,6 +545,7 @@ Views.dashboard.after = () => {
       },
     };
     Charts.make('ch-trend', { type: 'bar', data: { labels: A.bk.list.map((b) => b.label), datasets }, options: o, plugins: [marker] });
+    trendScrollToNow(A.bk);
   }
   const catList = Object.entries(S.byCat).sort((a, b) => b[1] - a[1]);
   if (catList.length) {

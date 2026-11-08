@@ -3,7 +3,7 @@
  * core.js — utilities, icons, data model, store and calculations
  * ===================================================================== */
 
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.12.0';
 const LS = { data: 'cbt.data.v1', cfg: 'cbt.config.v1', ui: 'cbt.ui.v1', sync: 'cbt.sync.v1' };
 
 /* ---------------- utils ---------------- */
@@ -320,7 +320,7 @@ if (!ui.acc || typeof ui.acc !== 'object') ui.acc = {};
 ui.filter = Object.assign({ preset: 'thisMonth', from: null, to: null, month: null, person: 'all', cats: [] }, ui.filter);
 if (ui.filter.person === 'shared') ui.filter.person = SPLIT; // v1.2: Shared → Split
 ui.tx = Object.assign({ q: '', type: 'all', account: 'all', sort: 'date', dir: -1, limit: 100 }, ui.tx);
-function saveUI() { lsSet(LS.ui, { page: ui.page, filter: ui.filter, tx: { ...ui.tx, q: '' }, budgetMonth: ui.budgetMonth, notesOpen: !!ui.notesOpen, acc: ui.acc || {} }); }
+function saveUI() { lsSet(LS.ui, { page: ui.page, filter: ui.filter, tx: { ...ui.tx, q: '' }, budgetMonth: ui.budgetMonth, notesOpen: !!ui.notesOpen, acc: ui.acc || {}, dashGran: ui.dashGran || 'auto' }); }
 
 /* ---------------- data migrations ----------------
  * v1.1: income categories are Salary, Bonus and Other Income only.

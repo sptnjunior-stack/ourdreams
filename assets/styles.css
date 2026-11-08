@@ -520,3 +520,12 @@ tr[draggable="true"] { -webkit-user-drag: element; }
 .acc-head:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; }
 .acc-card .acc-body { margin-top: 12px; }
 .acc-card h3 svg.i { width: 16px; height: 16px; vertical-align: -2px; color: var(--primary); }
+
+/* ---- dashboard chart: Days / Weeks / Months + sideways scroll on phones (v1.12) ---- */
+.trend-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: -2px 0 10px; }
+.seg.sm button { padding: 4px 12px; font-size: 12.5px; }
+.chart-scroll { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scrollbar-width: thin; }
+@media (max-width: 860px) {
+  .chart-scroll .chart-box { min-width: max(100%, var(--chart-min, 0px)); }
+  .chart-scroll { margin: 0 -4px; padding: 0 4px 6px; scroll-snap-type: x proximity; }
+}
