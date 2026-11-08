@@ -110,6 +110,14 @@ const sync = {
   busy: null,
   _timer: null,
   saveMeta() { lsSet(LS.sync, this.meta); },
+  /** Records changed on this device since the last successful sync. */
+  pendingCount() {
+    return store.memo('pending:' + (this.meta.lastSync || ''), () => {
+      const ls = this.meta.lastSync || ''; let n = 0;
+      for (const c of COLLECTIONS) for (const r of store.data[c] || []) if (!ls || (r.updatedAt || '') > ls) n++;
+      return n;
+    });
+  },
   markDirty() {
     this.meta.dirty = true; this.saveMeta();
     this.updatePill();
@@ -118,7 +126,9 @@ const sync = {
   status() {
     if (!gh.configured()) return { cls: '', ic: 'cloudOff', text: 'Local only', title: 'Not connected to GitHub — data is saved in this browser only. Connect in Settings.' };
     if (this.state === 'syncing') return { cls: 'syncing', ic: 'refresh', text: 'Syncing…', title: 'Syncing with GitHub' };
-    if (this.state === 'error') return { cls: 'error', ic: 'alert', text: this.publicRepo ? 'Sync paused · public repo' : 'Sync error', title: this.meta.error || 'Sync failed' };
+    const n = this.pendingCount(); const nTxt = `${n} change${n === 1 ? '' : 's'} not synced`;
+    if (this.state === 'error') return { cls: 'error', ic: 'alert', text: n ? `${this.publicRepo ? 'Sync paused' : 'Sync error'} · ${nTxt}` : (this.publicRepo ? 'Sync paused · public repo' : 'Sync error'), title: `${this.meta.error || 'Sync failed'}${n ? ` — ${nTxt}; they are safe on this device and will upload once sync works.` : ''}` };
+    if (this.meta.dirty && n) return { cls: '', ic: 'cloud', text: nTxt, title: 'Changes waiting to be saved to GitHub' };
     if (this.meta.dirty) return { cls: '', ic: 'cloud', text: 'Unsaved', title: 'Changes waiting to be saved to GitHub' };
     return { cls: 'synced', ic: 'cloud', text: `Synced ${relTime(this.meta.lastSync)}`, title: `Last synced ${relTime(this.meta.lastSync)}` };
   },

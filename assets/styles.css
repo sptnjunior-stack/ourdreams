@@ -529,3 +529,31 @@ tr[draggable="true"] { -webkit-user-drag: element; }
   .chart-scroll .chart-box { min-width: max(100%, var(--chart-min, 0px)); }
   .chart-scroll { margin: 0 -4px; padding: 0 4px 6px; scroll-snap-type: x proximity; }
 }
+
+/* ---- adjustments (v1.13) ---- */
+.unexp { font-weight: 500; }
+.unexp.warn { color: var(--warn); font-weight: 600; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--primary); font: inherit; font-weight: 700; cursor: pointer; text-decoration: underline; }
+.merge-group { border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; margin-bottom: 10px; }
+.mg-head { margin-bottom: 6px; }
+.mg-line { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 2px 0; }
+.mg-net { border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 6px; }
+.banner.warn { border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+
+/* ---- committed budgets (v1.13) ---- */
+.progress.two { display: flex; position: relative; }
+.progress.two > span { border-radius: 0; flex: none; }
+.progress.two > span:first-child { border-radius: 999px 0 0 999px; }
+.progress.two .cmt { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--primary) 70%, transparent) 0 4px, color-mix(in srgb, var(--primary) 40%, transparent) 4px 8px); }
+.progress.two .free { background: var(--good); }
+.progress.two.st-amber .cmt { background: repeating-linear-gradient(135deg, var(--warn) 0 4px, color-mix(in srgb, var(--warn) 55%, transparent) 4px 8px); }
+.progress.two.st-amber .free { background: var(--warn); }
+.progress.two.st-red .free { background: var(--bad); }
+.progress.two .plan-mark { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text); opacity: .8; }
+.bud-sub { grid-column: 1 / -1; margin-top: -2px; }
+.raise-btn { margin-top: 4px; white-space: nowrap; }
+tr.row-amber td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.inst-budget { margin-top: 6px; display: flex; gap: 6px; align-items: flex-start; }
+.inst-budget svg.i { width: 15px; height: 15px; flex: none; margin-top: 1px; }
+.inst-budget.warn { color: var(--warn); }
+.banner.warn { color: var(--text); background: color-mix(in srgb, var(--warn) 10%, var(--surface)); }

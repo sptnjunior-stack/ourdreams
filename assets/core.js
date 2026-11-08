@@ -3,7 +3,7 @@
  * core.js — utilities, icons, data model, store and calculations
  * ===================================================================== */
 
-const APP_VERSION = '1.12.0';
+const APP_VERSION = '1.13.0';
 const LS = { data: 'cbt.data.v1', cfg: 'cbt.config.v1', ui: 'cbt.ui.v1', sync: 'cbt.sync.v1' };
 
 /* ---------------- utils ---------------- */
@@ -395,6 +395,31 @@ function migrateData(d) {
   return changed;
 }
 
+/* ---------------- IndexedDB mirror ----------------
+ * localStorage holds ~5 MB and is synchronous; IndexedDB holds far more. Every save goes to both.
+ * On start we read localStorage (instant), then merge in the IndexedDB copy, which wins if newer
+ * (e.g. when localStorage was full). We also ask the browser to keep this storage ("persistent"). */
+const idb = {
+  _db: null,
+  open() {
+    if (!this._db) {
+      this._db = new Promise((res, rej) => {
+        try {
+          if (!window.indexedDB) { rej(new Error('IndexedDB not available')); return; }
+          const r = indexedDB.open('our-budget', 1);
+          r.onupgradeneeded = () => { r.result.createObjectStore('kv'); };
+          r.onsuccess = () => res(r.result);
+          r.onerror = () => rej(r.error);
+        } catch (e) { rej(e); }
+      });
+      this._db.catch(() => {});
+    }
+    return this._db;
+  },
+  async get(k) { const db = await this.open(); return new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); },
+  async set(k, val) { const db = await this.open(); return new Promise((res, rej) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(val, k); tx.oncomplete = () => res(true); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); }); },
+};
+
 /* ---------------- store ---------------- */
 const store = {
   data: null,
@@ -406,8 +431,35 @@ const store = {
     observeClock(this.data);
     if (migrateData(this.data)) { this.persist(); this._migrated = true; }
   },
+  idbOk: false,
   persist() {
-    if (!lsSet(LS.data, this.data)) toast('Could not save to this browser (storage full or blocked).', 'bad');
+    const lsOk = lsSet(LS.data, this.data);
+    clearTimeout(this._idbT);
+    const json = JSON.stringify(this.data);
+    this._idbT = setTimeout(() => {
+      idb.set('data', json).then(() => { this.idbOk = true; }).catch((e) => {
+        this.idbOk = false; if (!this._idbWarned) { this._idbWarned = true; console.warn('[idb]', e); }
+        if (!lsOk) toast('Could not save to this browser (storage full or blocked). Download a backup in Settings.', 'bad');
+      });
+    }, 200);
+    if (!lsOk && !this.idbOk && !this._lsWarned) { this._lsWarned = true; console.warn('[store] localStorage full — relying on IndexedDB'); }
+  },
+  /** After start: merge the IndexedDB copy (it may be newer than localStorage) and keep both in step. */
+  async hydrate() {
+    try {
+      try { if (navigator.storage && navigator.storage.persist) this.persisted = await navigator.storage.persist(); } catch (e) { /* ignore */ }
+      const raw = await idb.get('data');
+      this.idbOk = true;
+      if (raw) {
+        const d = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        observeClock(d);
+        const before = canon(this.data);
+        const merged = mergeData(this.data, d);
+        if (canon(merged) !== before) { this.replace(merged); if (typeof App !== 'undefined') App.render(); return 'merged'; }
+      }
+      await idb.set('data', JSON.stringify(this.data));
+      return raw ? 'same' : 'copied';
+    } catch (e) { console.warn('[idb] hydrate', e); return 'unavailable'; }
   },
   replace(data) { this.data = normalizeData(data); observeClock(this.data); migrateData(this.data); this.version++; this.persist(); },
   all(c) {
@@ -891,6 +943,102 @@ function cardReminders(ref = todayStr(), daysAhead = 7) {
   return out.sort((x, y) => x.days - y.days);
 }
 
+/* ---- upcoming bills (next 30 days) ----
+ * Card/paylater statement amounts still due, plus monthly repeats not recorded yet that take money
+ * out of these accounts (money moving between two of these accounts cancels out). In IDR. */
+function upcomingBills(accs, ref = todayStr(), days = 30) {
+  const ids = new Set(accs.map((a) => a.id)); const items = [];
+  for (const r of cardReminders(ref, days)) if (ids.has(r.a.id)) items.push({ kind: 'card', label: `${r.a.name} bill`, date: r.st.dueDate, v: convert(r.st.due, r.a.currency, 'IDR') });
+  const end = addDays(ref, days);
+  for (const tpl of repeatTemplates()) {
+    for (const ym of [ref.slice(0, 7), addMonths(ref.slice(0, 7), 1)]) {
+      if (ym <= tpl.date.slice(0, 7) || (tpl.repeat.skips || []).includes(ym) || repeatOccurrence(tpl, ym)) continue;
+      const due = dayInMonth(ym, Number(tpl.repeat.day) || Number(tpl.date.slice(8, 10)));
+      if (due > end || due < addDays(ref, -10)) continue;
+      const fromAcc = store.accMap().get(tpl.accountId);
+      let v = 0;
+      if (fromAcc && ids.has(fromAcc.id) && !isDebtAcc(fromAcc)) v += toIDR(tpl, outflowAmt(tpl));
+      if (tpl.toAccountId && ids.has(tpl.toAccountId) && tpl.toAccountId !== tpl.accountId) v -= toIDR(tpl, principalAmt(tpl));
+      if (Math.abs(v) > 0.5) items.push({ kind: 'repeat', label: tpl.description || 'Monthly item', date: due, v });
+    }
+  }
+  return { items, total: sum(items, (x) => x.v) };
+}
+
+/* ---- committed money ----
+ * Money already promised in a month: installment portions (and their interest) due that month, plus
+ * monthly repeats (rent share …) — recorded ones and ones still expected. Budgets compare
+ * Planned vs Committed + Spent freely, so a big installment shows as "planned too low" (amber),
+ * not as "we overspent" (red). */
+function commitLines(ym) {
+  return store.memo('commit:' + ym, () => {
+    const from = `${ym}-01`, to = endOfMonth(ym); const out = [];
+    for (const l of allLines()) if ((l.inst || l.instInt) && l.type === 'expense' && l.date >= from && l.date <= to) out.push({ ...l, kind: 'installment', recorded: true });
+    for (const tpl of repeatTemplates()) {
+      if (ym < tpl.date.slice(0, 7) || (tpl.repeat.skips || []).includes(ym)) continue;
+      const occ = repeatOccurrence(tpl, ym);
+      const due = occ ? null : dayInMonth(ym, Number(tpl.repeat.day) || Number(tpl.date.slice(8, 10)));
+      for (const l of linesOf(occ || tpl)) {
+        if (l.type !== 'expense' || l.fee || l.inst || l.instInt) continue;
+        out.push({ ...l, date: occ ? l.date : due, kind: 'repeat', recorded: !!occ });
+      }
+    }
+    return out;
+  });
+}
+const commitMatch = (l, f) => (f.person === 'all' || (f.person === SPLIT ? isSplit(l.t) : l.person === f.person)) && (!f.cats || f.cats.has(l.categoryId));
+/** Committed money inside a filter range: total (incl. still-expected repeats) and the part already recorded. */
+function committedIn(f) {
+  const r = { total: {}, recorded: {}, sum: 0, recSum: 0 };
+  for (const ym of monthsBetween(f.from.slice(0, 7), f.to.slice(0, 7))) {
+    for (const l of commitLines(ym)) {
+      if (l.date < f.from || l.date > f.to || !commitMatch(l, f)) continue;
+      r.total[l.categoryId] = (r.total[l.categoryId] || 0) + l.v; r.sum += l.v;
+      if (l.recorded) { r.recorded[l.categoryId] = (r.recorded[l.categoryId] || 0) + l.v; r.recSum += l.v; }
+    }
+  }
+  return r;
+}
+/** Per-person committed amount for one category in one month (for "Raise plan to cover"). */
+function committedByPerson(ym, catId, excludeTxId) {
+  const r = { junior: 0, sabit: 0 };
+  for (const l of commitLines(ym)) if (l.categoryId === catId && l.t.id !== excludeTxId && r[l.person] !== undefined) r[l.person] += l.v;
+  return r;
+}
+/** ok | amber (commitments alone exceed the plan: planned too low) | red (new spending pushed it over) */
+function budgetStatus(plan, cmt, free) {
+  const c = Math.max(0, cmt);
+  if (c > plan + 0.5) return 'amber';
+  if (c + free > plan + 0.5) return 'red';
+  return 'ok';
+}
+
+/* ---- balance adjustments ----
+ * UNEXPLAINED_LIMIT: above this (in IDR) an account's adjustments in the period are flagged for review. */
+const UNEXPLAINED_LIMIT = 50000;
+const isAdj = (t) => t.type === 'adjustment';
+/** Groups of 2+ adjustments on the same account and day (same currency) that can be merged into one. */
+function adjustmentGroups() {
+  const g = new Map();
+  for (const t of store.activeTx()) {
+    if (!isAdj(t) || !t.accountId) continue;
+    const k = `${t.accountId}|${t.date}|${t.currency || 'IDR'}`;
+    if (!g.has(k)) g.set(k, []);
+    g.get(k).push(t);
+  }
+  return [...g.values()].filter((l) => l.length > 1).map((list) => {
+    list.sort((a, b) => (a.createdAt || a.updatedAt || '').localeCompare(b.createdAt || b.updatedAt || ''));
+    const net = Math.round(sum(list, (t) => Number(t.amount) || 0) * 100) / 100;
+    return { acc: store.accMap().get(list[0].accountId), date: list[0].date, currency: list[0].currency || 'IDR', list, net };
+  }).sort((a, b) => b.date.localeCompare(a.date));
+}
+/** Sum of adjustments per account inside a date range, in the account currency and in IDR. */
+function unexplainedFor(acc, f) {
+  const list = store.activeTx().filter((t) => isAdj(t) && t.accountId === acc.id && t.date >= f.from && t.date <= f.to);
+  const v = sum(list, (t) => convert(Number(t.amount) || 0, t.currency || 'IDR', acc.currency, t.rate));
+  return { v, idr: convert(v, acc.currency, 'IDR'), n: list.length };
+}
+
 /* Goals */
 function goalSaved(g, asOf = todayStr()) {
   if (g.accountId) {
@@ -915,6 +1063,7 @@ function goalSavedBetween(g, from, to) {
 function toast(msg, kind = '', action) {
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
+  const ms = (action && action.ms) || (action ? 6000 : 3200);
   el.innerHTML = `<span>${esc(msg)}</span>`;
   if (action) {
     const b = document.createElement('button');
@@ -923,7 +1072,7 @@ function toast(msg, kind = '', action) {
     el.appendChild(b);
   }
   $('#toasts').appendChild(el);
-  setTimeout(() => el.remove(), action ? 6000 : 3200);
+  setTimeout(() => el.remove(), ms);
 }
 
 const Modal = {

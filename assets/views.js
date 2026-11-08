@@ -118,6 +118,12 @@ function progressBar(ratio, lg = false) {
   const cls = ratio > 1 ? 'over' : ratio > 0.85 ? 'near' : 'ok';
   return `<div class="progress ${lg ? 'lg' : ''}"><span class="${cls}" style="width:${clamp(ratio * 100, 0, 100).toFixed(1)}%"></span></div>`;
 }
+/* Budget bar in two parts: committed (striped) + spent freely; a tick marks the plan when over. */
+function commitBar(plan, cmt, free) {
+  const c = Math.max(0, cmt), fr = Math.max(0, free), tot = c + fr; const base = Math.max(plan, tot) || 1;
+  const st = budgetStatus(plan, cmt, free);
+  return `<div class="progress two st-${st}" title="Committed ${money(c)} · spent freely ${money(fr)} · plan ${money(plan)}"><span class="cmt" style="width:${((c / base) * 100).toFixed(1)}%"></span><span class="free" style="width:${((fr / base) * 100).toFixed(1)}%"></span>${plan && tot > plan + 0.5 ? `<i class="plan-mark" style="left:${((plan / base) * 100).toFixed(1)}%"></i>` : ''}</div>`;
+}
 function emptyState(title, text, btn = '') { return `<div class="empty"><h4>${title}</h4><div>${text}</div>${btn ? `<div style="margin-top:12px">${btn}</div>` : ''}</div>`; }
 function amountCell(t) {
   const base = txBase(t);
@@ -328,8 +334,11 @@ Views.dashboard = () => {
   const asOf = f.to < today ? f.to : today;
   const accs = accountsForPerson(f.person === SPLIT ? 'all' : f.person);
   const balance = sum(accs, (a) => accountBalanceIDR(a, asOf));
-  const budgetLeft = B.total - S.outflow;
-  const used = B.total ? S.outflow / B.total : 0;
+  const CM = committedIn(f);
+  const expected = CM.sum - CM.recSum; // monthly repeats not recorded yet (e.g. rent share later this month)
+  const budgetLeft = B.total - S.outflow - expected;
+  const used = B.total ? (S.outflow + expected) / B.total : 0;
+  const overByCommit = B.total && budgetLeft < 0 && CM.sum > B.total + 0.5;
   const saveRate = S.income ? (S.income - S.spend) / S.income : NaN;
 
   if (!store.activeTx().length) {
@@ -351,7 +360,10 @@ Views.dashboard = () => {
 
   const kpi = (label, value, sub, extra = '') => `<div class="card kpi"><span class="kpi-label">${label}</span><span class="kpi-value" title="${esc(value)}">${value}</span><span class="kpi-sub">${sub}</span>${extra}</div>`;
 
-  const catRows = Object.keys({ ...B.perCat, ...S.byCat }).map((id) => ({ id, c: store.catMap().get(id), budget: B.perCat[id] || 0, actual: S.byCat[id] || 0 }))
+  const catRows = Object.keys({ ...B.perCat, ...S.byCat, ...CM.total }).map((id) => {
+    const cmt = CM.total[id] || 0, free = (S.byCat[id] || 0) - (CM.recorded[id] || 0);
+    return { id, c: store.catMap().get(id), budget: B.perCat[id] || 0, cmt, free, actual: Math.max(0, cmt) + free };
+  })
     .filter((r) => r.c && r.c.type === 'expense' && (r.budget || r.actual))
     .sort((a, b) => (b.budget ? b.actual / b.budget : 9) - (a.budget ? a.actual / a.budget : 9) || b.actual - a.actual).slice(0, 8);
   const recent = [...txs].sort((a, b) => (b.date + (b.createdAt || b.updatedAt || '')).localeCompare(a.date + (a.createdAt || a.updatedAt || ''))).slice(0, 7);
@@ -386,6 +398,17 @@ Views.dashboard = () => {
       <div style="display:flex;gap:6px;flex-wrap:wrap"><a class="btn sm primary" href="#settings">Connect</a>${backupOld ? `<button class="btn sm" data-action="export-json">${icon('download')} Backup</button>` : ''}<button class="btn sm ghost" data-action="local-snooze">Tomorrow</button></div></div>`;
   })();
   if (localHTML) notes.push({ kind: 'local', sev: 'bad', html: localHTML, chip: 'Not synced to GitHub' });
+  const offHTML = (() => {
+    if (!gh.configured() || !(sync.state === 'error' || sync.meta.error)) return '';
+    const n = sync.pendingCount(); if (!n) return '';
+    const now = Date.now(); const last = sync.meta.lastSync ? Date.parse(sync.meta.lastSync) : 0;
+    if (last && now - last < 86400e3) return '';
+    const lb = cfg.lastBackup ? Date.parse(cfg.lastBackup) : 0;
+    if (lb && now - lb < 86400e3) return '';
+    return `<div class="banner bad">${icon('cloudOff')}<div class="grow small"><b>Sync has been off ${last ? `since ${relTime(sync.meta.lastSync)}` : 'since you connected'}.</b> ${n} change${n === 1 ? ' is' : 's are'} only on this device. Download a backup now, then fix sync in Settings.${lb ? ` Last backup: ${relTime(cfg.lastBackup)}.` : ''}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm primary" data-action="export-json">${icon('download')} Backup</button><a class="btn sm" href="#settings">Fix sync</a></div></div>`;
+  })();
+  if (offHTML) notes.push({ kind: 'local', sev: 'bad', html: offHTML, chip: `${sync.pendingCount()} not synced` });
   const dueRepeats = repeatDue();
   if (dueRepeats.length) notes.push({ kind: 'repeat', sev: dueRepeats.some((d) => d.days < 0) ? 'warn' : 'info', html: repeatDue().map(({ tpl, ym, due, days }) => `<div class="banner info repeat-banner">${icon('repeat')}<div class="grow small"><b>${esc(tpl.description || (catOf(tpl) || {}).name || 'Monthly item')}</b> · ${money(txBase(tpl))}${isPayback(tpl) ? ` · ${esc(pname(tpl.person))} → ${esc(pname(partnerOf(tpl.person)))}` : ''} ${days < 0 ? `was due ${fmtDate(due)}` : days === 0 ? 'is due today' : `is due ${fmtDate(due)}`}</div><button class="btn sm ghost" data-action="skip-repeat" data-id="${tpl.id}" data-ym="${ym}">Skip ${esc(fmtMonth(ym))}</button><button class="btn sm primary" data-action="record-repeat" data-id="${tpl.id}" data-ym="${ym}">Record</button></div>`).join(''), chip: dueRepeats.length === 1 ? `${dueRepeats[0].tpl.description || 'Monthly item'} ${dueRepeats[0].days < 0 ? 'overdue' : 'due'}` : `${dueRepeats.length} monthly items due` });
   const bills = cardReminders();
@@ -410,9 +433,17 @@ Views.dashboard = () => {
     ${kpi('Income', money(S.income, { compact: true }), deltaHTML(S.income, P.income, true))}
     ${kpi('Spending', money(S.spend, { compact: true }), deltaHTML(S.spend, P.spend, false))}
     ${kpi('Saved & invested', money(S.saved, { compact: true }), isFinite(saveRate) ? `Kept <b>${pct(saveRate)}</b> of income` : 'no income in period')}
-    ${kpi(B.total ? 'Budget left' : 'Budget', B.total ? `<span class="${budgetLeft < 0 ? 'bad' : ''}">${money(budgetLeft, { compact: true })}</span>` : '–',
-    B.total ? `${pct(used)} of ${money(B.total, { compact: true })} used` : '<a href="#budget">Set a budget →</a>', B.total ? progressBar(used) : '')}
-    ${(() => { const cd = cashAndDebt(accs, asOf); return kpi('Current balance', money(balance, { compact: true }), cd.debt ? `Cash ${money(cd.cash, { compact: true })} · <span class="bad">Card debt ${money(cd.debt, { compact: true })}</span>` : `${accs.length} account${accs.length === 1 ? '' : 's'} · ${asOf === today ? 'today' : fmtDate(asOf)}`); })()}
+    ${kpi(B.total ? 'Budget left' : 'Budget', B.total ? `<span class="${budgetLeft < 0 ? (overByCommit ? 'warn' : 'bad') : ''}">${money(budgetLeft, { compact: true })}</span>` : '–',
+    B.total ? (overByCommit ? `<span class="warn">Planned too low for what's committed</span> · <a href="#budget">Raise plan →</a>` : `${pct(used)} of ${money(B.total, { compact: true })} used${CM.sum ? ` · ${money(CM.sum, { compact: true })} committed` : ''}`) : '<a href="#budget">Set a budget →</a>', B.total ? commitBar(B.total, CM.sum, S.outflow - CM.recSum) : '')}
+    ${(() => {
+      const cd = cashAndDebt(accs, asOf);
+      const owed = cd.debt ? `<span class="bad">owed on cards ${money(-cd.debt, { compact: true })}</span>` : '';
+      if (asOf !== today) return kpi('Cash available', money(cd.cash, { compact: true }), `on ${fmtDate(asOf)}${owed ? ` · ${owed}` : ''}`);
+      const up = upcomingBills(accs, today);
+      const after = cd.cash - up.total;
+      const title = up.items.length ? `Due in the next 30 days: ${up.items.map((x) => `${x.label} ${money(x.v)} (${fmtDate(x.date, false)})`).join(', ')}` : 'No card bills or monthly repeats due in the next 30 days';
+      return kpi('Cash available', money(cd.cash, { compact: true }), `<span title="${esc(title)}">after upcoming bills: <b class="${after < 0 ? 'bad' : ''}">${money(after, { compact: true })}</b></span>${owed ? ` · ${owed}` : ''}`);
+    })()}
   </div>
 
   <div class="card section-gap">
@@ -448,8 +479,8 @@ Views.dashboard = () => {
     <div class="card">
       <div class="card-head"><h3>Budget vs actual</h3><div class="right"><a class="small" href="#budget">Plan →</a></div></div>
       ${catRows.length ? catRows.map((r) => `<div class="budget-row"><div class="nowrap" style="overflow:hidden;text-overflow:ellipsis"><span class="dot" style="background:${r.c.color}"></span> ${esc(r.c.name)}${isFixed(r.c) ? ' <span class="badge">fixed</span>' : ''}</div>
-        <div class="small num nowrap"><b class="${r.budget && r.actual > r.budget ? 'bad' : ''}">${money(r.actual, { compact: true })}</b> <span class="muted">/ ${r.budget ? money(r.budget, { compact: true }) : 'no budget'}</span></div>
-        ${progressBar(r.budget ? r.actual / r.budget : (r.actual ? 1.01 : 0))}</div>`).join('') : emptyState('No budget yet', 'Set monthly amounts per category on the Budget page.', '<a class="btn sm" href="#budget">Plan budget</a>')}
+        <div class="small num nowrap">${(() => { const st = budgetStatus(r.budget, r.cmt, r.free); return `<b class="${st === 'amber' ? 'warn' : st === 'red' ? 'bad' : ''}">${money(r.actual, { compact: true })}</b>`; })()} <span class="muted">/ ${r.budget ? money(r.budget, { compact: true }) : 'no budget'}</span></div>
+        ${commitBar(r.budget, r.cmt, r.free)}${r.cmt > 0.5 ? `<div class="small muted bud-sub">${money(r.cmt, { compact: true })} committed${budgetStatus(r.budget, r.cmt, r.free) === 'amber' ? ' · <span class="warn">planned too low</span>' : ''}</div>` : ''}</div>`).join('') : emptyState('No budget yet', 'Set monthly amounts per category on the Budget page.', '<a class="btn sm" href="#budget">Plan budget</a>')}
     </div>
     <div class="card">
       <div class="card-head"><h3>Goals</h3><div class="right"><a class="small" href="#goals">All goals →</a></div></div>
@@ -574,13 +605,15 @@ Views.dashboard.after = () => {
 
 /* ================= SPENDING (transactions) ================= */
 const TX_SORT_LABELS = { date: 'date', description: 'description', category: 'category', person: 'person', amount: 'amount' };
-const TX_DEFAULT = { q: '', type: 'all', account: 'all', sort: 'date', dir: -1, flagged: false };
+const TX_DEFAULT = { q: '', type: 'all', account: 'all', sort: 'date', dir: -1, flagged: false, showAdj: false };
 const txViewChanged = () => Object.keys(TX_DEFAULT).some((k) => (ui.tx[k] ?? TX_DEFAULT[k]) !== TX_DEFAULT[k]);
 Views.spending = () => {
   const f = getFilter();
   const q = ui.tx.q.trim().toLowerCase();
   let txs = filteredTx(f).filter((t) => (ui.tx.type === 'all' || t.type === ui.tx.type || (ui.tx.type === 'transfer' && t.type === 'adjustment'))
     && (ui.tx.account === 'all' || t.accountId === ui.tx.account || t.toAccountId === ui.tx.account));
+  const adjHere = txs.filter(isAdj).length;
+  if (!ui.tx.showAdj) txs = txs.filter((t) => !isAdj(t));
   const flaggedHere = txs.filter((t) => t.flagged).length;
   if (ui.tx.flagged) txs = txs.filter((t) => t.flagged);
   if (q) {
@@ -613,6 +646,7 @@ Views.spending = () => {
     ${txViewChanged() ? `<button class="btn ghost sm" data-action="tx-reset" title="Back to newest first, all types, all accounts, no search">${icon('x')} Reset view</button>` : ''}
     <span class="grow"></span>
     <button class="btn" data-action="import">${icon('upload')}<span class="hide-sm">Import</span></button>
+    ${adjHere ? `<button class="btn ${ui.tx.showAdj ? 'flag-on' : ''}" data-action="tx-adj" title="Balance adjustments from Reconcile are hidden by default">${icon('scale')} ${ui.tx.showAdj ? 'Hide' : 'Show'} adjustments <span class="count">${adjHere}</span></button>` : ''}
     <button class="btn ${ui.tx.flagged ? 'flag-on' : ''}" data-action="tx-flagged" title="Show only flagged transactions">${icon('flag')} Flagged${flaggedHere ? ` <span class="count">${flaggedHere}</span>` : ''}</button>
     <button class="btn" data-action="export-csv">${icon('download')}<span class="hide-sm">Export</span></button>
     <button class="btn primary" data-action="add-tx">${icon('plus')} Add</button>
@@ -672,29 +706,36 @@ Views.budget = () => {
   const mf = { from: `${ym}-01`, to: endOfMonth(ym), person: f.person, cats: f.cats };
   const actual = {};
   for (const l of filteredLines(mf)) actual[l.categoryId] = (actual[l.categoryId] || 0) + l.v;
+  const CM = committedIn(mf);
+  const cmtOf = (id) => CM.total[id] || 0;
+  const freeOf = (id) => (actual[id] || 0) - (CM.recorded[id] || 0);
   const cats = store.categories().filter((c) => !f.cats || f.cats.has(c.id));
   const cols = PEOPLE;
   const onePerson = f.person === 'junior' || f.person === 'sabit';
   const planned = (c) => (onePerson ? budgetCell(ym, c.id, f.person) : budgetCell(ym, c.id, 'all'));
   const sections = [['Income', cats.filter((c) => c.type === 'income')], ...GROUPS.map((g) => [g, cats.filter((c) => c.type === 'expense' && c.group === g)])];
-  const tot = { incomePlan: 0, incomeAct: 0, expPlan: 0, expAct: 0, savPlan: 0, savAct: 0 };
+  const tot = { incomePlan: 0, incomeAct: 0, expPlan: 0, expAct: 0, savPlan: 0, savAct: 0, cmt: 0, free: 0 };
   for (const c of cats) {
     const p = planned(c), a = actual[c.id] || 0;
-    if (c.type === 'income') { tot.incomePlan += p; tot.incomeAct += a; } else { tot.expPlan += p; tot.expAct += a; if (c.group === 'Savings') { tot.savPlan += p; tot.savAct += a; } }
+    if (c.type === 'income') { tot.incomePlan += p; tot.incomeAct += a; } else { tot.expPlan += p; tot.expAct += a; tot.cmt += cmtOf(c.id); tot.free += freeOf(c.id); if (c.group === 'Savings') { tot.savPlan += p; tot.savAct += a; } }
   }
+  const amberCats = cats.filter((c) => c.type === 'expense' && budgetStatus(planned(c), cmtOf(c.id), freeOf(c.id)) === 'amber');
   const unalloc = tot.incomePlan - tot.expPlan;
   const isPast = ym < thisMonth();
   const rowHTML = (c) => {
-    const p = planned(c), a = actual[c.id] || 0;
-    const left = p - a; const isInc = c.type === 'income';
+    const p = planned(c), a = actual[c.id] || 0; const isInc = c.type === 'income';
+    const cm = isInc ? 0 : cmtOf(c.id), fr = isInc ? a : freeOf(c.id);
+    const left = isInc ? a - p : p - cm - fr;
+    const st = isInc ? 'ok' : budgetStatus(p, cm, fr);
     const ratio = p ? a / p : (a ? 1.01 : 0);
-    return `<tr>
+    return `<tr class="${st === 'amber' ? 'row-amber' : ''}">
       <td class="nowrap"><span class="dot" style="background:${c.color}"></span> ${esc(c.name)}${isFixed(c) ? ' <span class="badge">fixed</span>' : ''}</td>
       ${cols.map((pid) => { const v = budgetCell(ym, c.id, pid); return `<td class="r ${onePerson && f.person !== pid ? 'hide-sm' : ''}" ${onePerson && f.person !== pid ? 'style="opacity:.45"' : ''}><input class="cell ${inherited ? 'inherited' : ''}" inputmode="decimal" data-bud="${c.id}|${pid}" value="${v ? fmtInput(v) : ''}" placeholder="0" aria-label="${esc(c.name)} budget for ${esc(pname(pid))}"></td>`; }).join('')}
       <td class="r num"><b>${money(p)}</b></td>
-      <td class="r num">${money(a)}</td>
-      <td class="r num ${!isInc && left < 0 ? 'bad' : ''} ${isInc && left > 0 && isPast ? 'warn' : ''}">${isInc ? money(a - p, { sign: true }) : money(left)}</td>
-      <td style="min-width:110px">${isInc ? progressBar(Math.min(ratio, 1)).replace(/class="(ok|near|over)"/, 'class="ok"') : progressBar(ratio)}</td>
+      <td class="r num ${cm ? '' : 'muted'}">${isInc ? '' : cm ? money(cm) : '–'}</td>
+      <td class="r num">${money(fr)}</td>
+      <td class="r num ${st === 'amber' ? 'warn' : st === 'red' ? 'bad' : ''} ${isInc && left < 0 && isPast ? 'warn' : ''}">${isInc ? money(left, { sign: true }) : money(left)}${st === 'amber' ? `<div><button class="btn sm raise-btn" data-action="raise-plan" data-id="${c.id}" title="Set the plan to at least what's already committed">Raise plan to cover</button></div>` : ''}</td>
+      <td style="min-width:110px">${isInc ? progressBar(Math.min(ratio, 1)).replace(/class="(ok|near|over)"/, 'class="ok"') : commitBar(p, cm, fr)}</td>
     </tr>`;
   };
   return `
@@ -707,11 +748,12 @@ Views.budget = () => {
     <button class="btn" data-action="bud-from-actual" title="Use last month's actual spending as this month's plan">${icon('refresh')} Use last month's actuals</button>
     <button class="btn danger" data-action="bud-clear">${icon('trash')} Clear month</button>
   </div>
+  ${amberCats.length ? `<div class="banner warn">${icon('alert')}<div class="grow small"><b>Planned too low for what's already committed:</b> ${amberCats.map((c) => esc(c.name)).join(', ')}. Installments and monthly repeats due in ${fmtMonth(ym, true)} are more than the plan. This isn't overspending — the plan just doesn't cover money you'd already promised.</div>${amberCats.length > 1 ? `<button class="btn sm" data-action="raise-plan" data-id="__all__">Raise all to cover</button>` : ''}</div>` : ''}
   ${inherited ? `<div class="banner info">${icon('info')}<div class="grow small">No budget saved for <b>${fmtMonth(ym, true)}</b> yet, so it's using <b>${fmtMonth(src, true)}</b>'s plan (budgets roll forward). Editing any amount saves a copy for ${fmtMonth(ym, true)}.</div></div>` : ''}
   ${!src ? `<div class="banner info">${icon('info')}<div class="grow small"><b>Plan your month:</b> type how much each of you expects to earn and spend per category. For joint costs like rent and groceries, put each person's share in their own column (e.g. half each). The plan carries forward to later months until you change it. Tip: "1,5jt" or "750rb" work too.</div></div>` : ''}
   <div class="grid kpis k4">
     <div class="card kpi"><span class="kpi-label">Planned income</span><span class="kpi-value">${money(tot.incomePlan, { compact: true })}</span><span class="kpi-sub">actual ${money(tot.incomeAct, { compact: true })}</span></div>
-    <div class="card kpi"><span class="kpi-label">Planned spending</span><span class="kpi-value">${money(tot.expPlan - tot.savPlan, { compact: true })}</span><span class="kpi-sub">actual ${money(tot.expAct - tot.savAct, { compact: true })}</span>${progressBar((tot.expPlan - tot.savPlan) ? (tot.expAct - tot.savAct) / (tot.expPlan - tot.savPlan) : 0)}</div>
+    <div class="card kpi"><span class="kpi-label">Planned spending</span><span class="kpi-value">${money(tot.expPlan - tot.savPlan, { compact: true })}</span><span class="kpi-sub">actual ${money(tot.expAct - tot.savAct, { compact: true })}${tot.cmt ? ` · ${money(tot.cmt, { compact: true })} committed` : ''}</span>${progressBar((tot.expPlan - tot.savPlan) ? (tot.expAct - tot.savAct) / (tot.expPlan - tot.savPlan) : 0)}</div>
     <div class="card kpi"><span class="kpi-label">Planned savings</span><span class="kpi-value">${money(tot.savPlan, { compact: true })}</span><span class="kpi-sub">actual ${money(tot.savAct, { compact: true })}</span></div>
     <div class="card kpi"><span class="kpi-label">${unalloc >= 0 ? 'Not yet allocated' : 'Over-allocated'}</span><span class="kpi-value ${unalloc < 0 ? 'bad' : ''}">${money(unalloc, { compact: true })}</span><span class="kpi-sub">income − planned outflow</span></div>
   </div>
@@ -719,11 +761,12 @@ Views.budget = () => {
     <div class="card-head"><h3>${fmtMonth(ym, true)} plan</h3><span class="sub">${onePerson ? `Showing ${esc(pname(f.person))}'s plan & actuals` : f.person === SPLIT ? 'Totals plan · actuals of split items only' : 'Totals for both of you'}${f.cats ? ' · filtered categories' : ''}</span></div>
     ${(() => { const per = PEOPLE.map((p) => [p, dailyAllowance(`${ym}-01`, p, f.cats)]); const tot = per.reduce((a, [, v]) => a + v, 0); return tot ? `<div class="banner info" style="margin-bottom:12px">${icon('calendar')}<div class="grow small"><b>Daily allowance for day-to-day spending:</b> ${per.map(([p, v]) => `${esc(pname(p))} ${money(v)}`).join(' · ')} per day. This is the flexible budget (categories not marked <span class="badge">fixed</span>) ÷ ${daysInMonth(ym)} days, and it's what the dashboard bars compare against.</div></div>` : ''; })()}
     <div class="table-wrap"><table class="t">
-      <thead><tr><th>Category</th>${cols.map((p) => `<th class="r ${onePerson && f.person !== p ? 'hide-sm' : ''}"><span class="dot" style="background:${pcolor(p)}"></span> ${esc(pname(p))}</th>`).join('')}<th class="r">Plan</th><th class="r">Actual</th><th class="r">Left</th><th></th></tr></thead>
+      <thead><tr><th>Category</th>${cols.map((p) => `<th class="r ${onePerson && f.person !== p ? 'hide-sm' : ''}"><span class="dot" style="background:${pcolor(p)}"></span> ${esc(pname(p))}</th>`).join('')}<th class="r">Plan</th><th class="r" title="Installments and monthly repeats due this month (recorded or still expected)">Committed</th><th class="r" title="Everything else you spent">Spent freely</th><th class="r">Left</th><th></th></tr></thead>
       <tbody>
       ${sections.filter(([, list]) => list.length).map(([g, list]) => {
     const pSum = sum(list, planned), aSum = sum(list, (c) => actual[c.id] || 0);
-    return `<tr class="group"><td colspan="${cols.length + 1}">${g}</td><td class="r">${money(pSum)}</td><td class="r">${money(aSum)}</td><td class="r">${g === 'Income' ? money(aSum - pSum, { sign: true }) : money(pSum - aSum)}</td><td></td></tr>${list.map(rowHTML).join('')}`;
+    const cSum = g === 'Income' ? 0 : sum(list, (c) => cmtOf(c.id)), fSum = g === 'Income' ? aSum : sum(list, (c) => freeOf(c.id));
+    return `<tr class="group"><td colspan="${cols.length + 1}">${g}</td><td class="r">${money(pSum)}</td><td class="r">${g === 'Income' ? '' : money(cSum)}</td><td class="r">${money(fSum)}</td><td class="r">${g === 'Income' ? money(aSum - pSum, { sign: true }) : money(pSum - cSum - fSum)}</td><td></td></tr>${list.map(rowHTML).join('')}`;
   }).join('')}
       </tbody></table></div>
   </div>
@@ -901,7 +944,9 @@ Views.balance = () => {
     </div>`;
   };
   return `
-  <div class="toolbar"><span class="muted small">Balances as of <b>${fmtDate(asOf)}</b> (end of the selected range).</span><span class="grow"></span>
+  ${(() => { const g = adjustmentGroups(); return g.length ? `<div class="banner warn">${icon('scale')}<div class="grow small"><b>${sum(g, (x) => x.list.length)} balance adjustments could be merged</b> — ${g.length} account-day${g.length === 1 ? ' has' : 's have'} more than one (e.g. ${esc(g[0].acc ? g[0].acc.name : '?')} on ${fmtDate(g[0].date, false)}). Merging keeps balances the same and makes real differences easier to spot.</div><button class="btn sm primary" data-action="merge-adj">Review & merge</button></div>` : ''; })()}
+  ${lastAdjMerge ? `<div class="banner info">${icon('check')}<div class="grow small">Adjustments merged.</div><button class="btn sm" data-action="undo-adj-merge">Undo merge</button></div>` : ''}
+  <div class="toolbar"><span class="muted small">Balances as of <b>${fmtDate(asOf)}</b> (end of the selected range). "Unexplained" = balance adjustments in this period; above ${money(UNEXPLAINED_LIMIT)} it's worth a look.</span><span class="grow"></span>
     <button class="btn" data-action="add-transfer">${icon('transfer')} Transfer</button>
     <button class="btn primary" data-action="add-acc">${icon('plus')} Add account</button></div>
   ${noOpening ? `<div class="banner info">${icon('info')}<div class="grow small"><b>Tip:</b> set each account's <b>starting balance</b> (and the date it applies from) so balances match your bank. Or use <b>Reconcile</b> to type in today's real balance and the tracker records the difference.</div></div>` : ''}
@@ -925,7 +970,7 @@ Views.balance = () => {
       ${accs.map((a) => { const bal = accountBalance(a, asOf); const ch = bal - accountBalance(a, startRef); return `<tr data-sort-id="${a.id}">
         <td class="name-cell">${dragHandle(a.name)}<b>${esc(a.name)}</b>${looksLikeDebt(a) ? ` <button class="badge warn" data-action="set-debt-type" data-id="${a.id}" style="border:0;cursor:pointer" title="Turn on installments, statements and bill reminders">Is this a ${suggestedDebtType(a) === 'paylater' ? 'paylater' : 'credit card'}?</button>` : ''}<div class="small muted">${ACCOUNT_TYPES[a.type] || a.type} · ${a.currency}${a.openingDate ? ` · since ${fmtDate(a.openingDate)}` : ''}</div></td>
         <td class="hide-sm">${personChip(a.owner)}</td>
-        <td class="r num nowrap"><b class="${bal < 0 ? 'bad' : ''}">${fmt(bal, a.currency)}</b>${a.currency !== 'IDR' ? `<span class="orig">≈ ${money(convert(bal, a.currency, 'IDR'))}</span>` : ''}</td>
+        <td class="r num nowrap"><b class="${bal < 0 ? 'bad' : ''}">${fmt(bal, a.currency)}</b>${a.currency !== 'IDR' ? `<span class="orig">≈ ${money(convert(bal, a.currency, 'IDR'))}</span>` : ''}${(() => { const u = unexplainedFor(a, f); if (!u.n) return ''; const big = Math.abs(u.idr) > UNEXPLAINED_LIMIT; return `<span class="orig unexp ${big ? 'warn' : ''}" title="Total of balance adjustments in this period — money the tracker can't explain">Unexplained ${fmt(u.v, a.currency, { sign: true })}${big ? ` · <button class="linkbtn" data-action="review-adj" data-id="${a.id}">Review</button>` : ''}</span>`; })()}</td>
         <td class="r num hide-sm ${ch < 0 ? 'bad' : ch > 0 ? 'good' : 'muted'}">${fmt(ch, a.currency, { sign: true })}</td>
         <td class="r nowrap"><button class="btn sm" data-action="reconcile" data-id="${a.id}" title="Enter the real balance">${icon('scale')}<span class="hide-sm">Reconcile</span></button><button class="btn ghost sm icon" data-action="edit-acc" data-id="${a.id}" aria-label="Edit">${icon('edit')}</button></td></tr>`; }).join('')}
       </tbody><tfoot><tr><td>Total</td><td class="hide-sm"></td><td class="r">${money(total)}</td><td class="r hide-sm">${money(sum(accs, (a) => accountBalanceIDR(a, asOf) - accountBalanceIDR(a, startRef)), { sign: true })}</td><td></td></tr></tfoot></table></div>`

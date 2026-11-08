@@ -85,6 +85,7 @@ const App = {
     this.onHash(true);
     if (!cfg.me) welcome();
     if (store._migrated) sync.markDirty();
+    store.hydrate().then((r) => { if (r === 'merged') sync.markDirty(); });
     sync.start();
   },
   onHash(first = false) {
@@ -345,7 +346,7 @@ const App = {
         store.batch(() => ids.forEach((x) => { const t = store.get('transactions', x); if (t && t.flagged) store.upsert('transactions', { ...t, flagged: false, flagNote: '', flaggedBy: '', flaggedAt: '' }); }));
         toast('Flags cleared.'); break;
       }
-      case 'tx-reset': Object.assign(ui.tx, { q: '', type: 'all', account: 'all', sort: 'date', dir: -1, limit: 100, flagged: false }); this.sel.clear(); saveUI(); this.render(); break;
+      case 'tx-reset': Object.assign(ui.tx, { q: '', type: 'all', account: 'all', sort: 'date', dir: -1, limit: 100, flagged: false, showAdj: false }); this.sel.clear(); saveUI(); this.render(); break;
       case 'sel': if (el.checked) this.sel.add(id); else this.sel.delete(id); this.render(); break;
       case 'sel-all': {
         const rows = $$('[data-action="sel"]').map((x) => x.dataset.id);
@@ -416,6 +417,30 @@ const App = {
       case 'add-acc': openAccountForm(); break;
       case 'edit-acc': openAccountForm(store.get('accounts', id)); break;
       case 'reconcile': openReconcile(store.get('accounts', id)); break;
+      case 'merge-adj': openMergeAdjustments(); break;
+      case 'raise-plan': {
+        const ym = ui.budgetMonth || thisMonth(); const fl = getFilter();
+        const people = fl.person === 'junior' || fl.person === 'sabit' ? [fl.person] : PEOPLE;
+        const catIds = id === '__all__'
+          ? store.categories().filter((cc) => cc.type === 'expense' && (!fl.cats || fl.cats.has(cc.id))).map((cc) => cc.id)
+          : [id];
+        const changes = [];
+        for (const cid of catIds) {
+          const byP = committedByPerson(ym, cid);
+          for (const p of people) {
+            const cur = budgetCell(ym, cid, p), need = Math.ceil(Math.max(0, byP[p]) / 1000) * 1000;
+            if (need > cur + 0.5) changes.push({ cid, p, cur, need });
+          }
+        }
+        if (!changes.length) { toast('The plan already covers what is committed.'); break; }
+        store.batch(() => changes.forEach((x) => this.setBudget(ym, x.cid, x.p, x.need)));
+        const desc = changes.slice(0, 3).map((x) => `${(store.catMap().get(x.cid) || {}).name} · ${pname(x.p)} ${money(x.cur, { compact: true })} → ${money(x.need, { compact: true })}`).join('; ');
+        toast(`Plan raised: ${desc}${changes.length > 3 ? ` (+${changes.length - 3} more)` : ''}`, '', { label: 'Undo', ms: 12000, fn: () => store.batch(() => changes.forEach((x) => this.setBudget(ym, x.cid, x.p, x.cur))) });
+        break;
+      }
+      case 'undo-adj-merge': if (lastAdjMerge) { const b = lastAdjMerge; store.batch(() => b.forEach((t) => store.upsert('transactions', t))); lastAdjMerge = null; toast('Merge undone.'); } break;
+      case 'tx-adj': ui.tx.showAdj = !ui.tx.showAdj; ui.tx.limit = 100; saveUI(); this.render(); break;
+      case 'review-adj': ui.tx = { ...ui.tx, account: id, showAdj: true, type: 'all', flagged: false, q: '', limit: 100 }; saveUI(); this.go('log'); break;
       case 'toggle-notes': ui.notesOpen = !ui.notesOpen; saveUI(); this.render(); break;
       case 'toggle-acc': { const k = el.dataset.k; const card = el.closest('.acc-card'); const open = !(card && card.classList.contains('open')); ui.acc = { ...(ui.acc || {}), [k]: open }; saveUI(); this.render(); break; }
       case 'record-repeat': {
@@ -632,6 +657,22 @@ function openTxForm(existing, preset = {}) {
   let ratio = clamp(Number(t.splitJunior ?? 0.5), 0, 1);
   let feeOn = hasFee;
   let months = instMonths(t) || 1;
+  // "Adds Rp X/month to Sabit's Entertainment … your plan is Rp Y" — shown before you commit to an installment
+  const instBudgetNote = (perMonth) => {
+    const catId = F('categoryId').value; const cat = store.catMap().get(catId);
+    if (type !== 'expense' || !cat) return '';
+    const curr = F('currency').value; const rate = curr === 'IDR' ? 1 : parseAmount(F('rate').value, 'us');
+    if (!isFinite(rate) || !isFinite(perMonth)) return '';
+    const ym = (F('date').value || todayStr()).slice(0, 7);
+    const shares = person === SPLIT ? [['junior', ratio], ['sabit', 1 - ratio]] : (person === 'junior' || person === 'sabit') ? [[person, 1]] : [];
+    const already = committedByPerson(ym, catId, t.id);
+    const parts = shares.filter(([, s]) => s > 0).map(([p, s]) => {
+      const add = perMonth * rate * s, plan = budgetCell(ym, catId, p), have = Math.max(0, already[p] || 0);
+      const over = have + add - plan;
+      return `<div class="inst-budget ${over > 0.5 ? 'warn' : ''}">${icon(over > 0.5 ? 'alert' : 'info')} Adds <b>${money(add)}</b>/month to ${esc(pname(p))}'s <b>${esc(cat.name)}</b> for ${months} months. ${plan ? `Plan ${money(plan)}/month${have ? ` (${money(have)} already committed)` : ''}${over > 0.5 ? ` → <b>over by ${money(over)}</b>. You can raise the plan on the Budget page.` : ' — still fits.'}` : 'No plan set for this category yet.'}</div>`;
+    });
+    return parts.join('');
+  };
   const fillCats = () => {
     const ctype = type === 'income' ? 'income' : 'expense';
     const cur = F('categoryId').value || t.categoryId;
@@ -712,7 +753,7 @@ function openTxForm(existing, preset = {}) {
       const P = feeNow() < 0 ? A2 - Math.abs(feeNow()) : A2;
       const intr = parseInterest(F('instInterest').value, P);
       const last = addMonthsToDate(F('date').value || todayStr(), months - 1);
-      isum.innerHTML = `<b>${fmt(P / months, cur)}</b> per month × ${months}${intr ? ` + ${fmt(intr, cur)} interest` : ''} · ${fmtDate(F('date').value || todayStr(), false)} – ${fmtDate(last)}. The card owes the full ${fmt(P, cur)} now; budgets count one month at a time (as a fixed cost).`;
+      isum.innerHTML = `<b>${fmt(P / months, cur)}</b> per month × ${months}${intr ? ` + ${fmt(intr, cur)} interest` : ''} · ${fmtDate(F('date').value || todayStr(), false)} – ${fmtDate(last)}. The card owes the full ${fmt(P, cur)} now; budgets count one month at a time (as a fixed cost).${instBudgetNote(P / months)}`;
     } else isum.innerHTML = '';
   };
   fillCats(); refresh();
@@ -1167,7 +1208,8 @@ function openReconcile(a) {
     <form class="modal-body" id="rec-form">
       <p style="margin-top:0">Tracker balance today: <b>${fmt(cur, a.currency)}</b></p>
       <label class="field">Actual balance in your bank / app (${a.currency})<input type="text" name="actual" inputmode="decimal" data-money="${a.currency}" autofocus placeholder="${fmtInput(cur, a.currency)}"></label>
-      <p class="hint">We'll add a "Balance adjustment" for the difference. It doesn't count as spending or income in reports.</p>
+      <p class="hint">We'll add a "Balance adjustment" for the difference. It doesn't count as spending or income in reports. If you reconcile this account again today, that same adjustment is updated instead of adding a new one.</p>
+      <p class="hint">Tip: a big difference usually means a missing or wrong transaction. Check the Log for this account first — adjustments are best for small rounding and fee differences.</p>
     </form>
     <div class="modal-foot"><span class="spacer"></span><button class="btn" data-close>Cancel</button><button class="btn primary" data-save>${icon('check')} Adjust</button></div>`);
   const form = $('#rec-form', m);
@@ -1176,11 +1218,50 @@ function openReconcile(a) {
     if (!isFinite(v)) { toast('Please enter the actual balance.', 'bad'); return; }
     const diff = v - cur;
     if (Math.abs(diff) < 0.005) { Modal.close(); toast('Already matches — nothing to adjust.'); return; }
+    // one adjustment per account per day: reconciling again today updates that one instead of adding another
+    const prev = store.activeTx().find((t) => isAdj(t) && t.accountId === a.id && t.date === today && (t.currency || 'IDR') === a.currency);
+    if (prev) {
+      const amt = Math.round(((Number(prev.amount) || 0) + diff) * 100) / 100;
+      if (Math.abs(amt) < 0.005) { store.remove('transactions', prev.id); Modal.close(); toast("Today's adjustment is no longer needed — removed."); return; }
+      store.upsert('transactions', { ...prev, amount: amt, notes: `Set to ${fmt(v, a.currency)}` });
+      Modal.close(); toast(`Updated today's adjustment to ${fmt(amt, a.currency, { sign: true })}.`); return;
+    }
     store.upsert('transactions', { id: uid('t_'), type: 'adjustment', date: today, amount: diff, currency: a.currency, rate: rateOf(a.currency), description: 'Balance adjustment', categoryId: '', person: a.owner, accountId: a.id, notes: `Set to ${fmt(v, a.currency)}` });
     Modal.close(); toast(`Adjusted by ${fmt(diff, a.currency, { sign: true })}.`);
   };
   form.onsubmit = (e) => { e.preventDefault(); save(); };
   m.querySelector('[data-save]').onclick = save;
+}
+
+/* Merge same-day adjustments: preview first, then one adjustment per account per day, with Undo. */
+let lastAdjMerge = null;
+function openMergeAdjustments() {
+  const groups = adjustmentGroups();
+  if (!groups.length) { toast('Nothing to merge — no account has more than one adjustment on the same day.'); return; }
+  const row = (g) => `<div class="merge-group"><div class="mg-head"><b>${esc(g.acc ? g.acc.name : '?')}</b> · ${fmtDate(g.date)}</div>
+    ${g.list.map((t) => `<div class="mg-line"><span class="muted">${esc(t.notes || 'Balance adjustment')}</span><span class="num">${fmt(Number(t.amount) || 0, g.currency, { sign: true })}</span></div>`).join('')}
+    <div class="mg-line mg-net"><span>${Math.abs(g.net) < 0.005 ? 'They cancel out → all removed' : `Becomes 1 adjustment`}</span><b class="num">${fmt(g.net, g.currency, { sign: true })}</b></div></div>`;
+  const total = sum(groups, (g) => g.list.length);
+  const m = Modal.open(`${Modal.head('Merge same-day adjustments', `${total} adjustments → ${groups.filter((g) => Math.abs(g.net) >= 0.005).length}`)}
+    <div class="modal-body"><p style="margin-top:0">Each account gets <b>one adjustment per day</b> with the same total, so balances don't change. Nothing else is touched.</p>
+      ${groups.map(row).join('')}
+      <p class="hint">You can undo right after. A full backup (Settings) before big clean-ups is always a good idea.</p></div>
+    <div class="modal-foot"><span class="spacer"></span><button class="btn" data-close>Cancel</button><button class="btn primary" data-save>${icon('check')} Merge</button></div>`);
+  m.querySelector('[data-save]').onclick = () => {
+    const before = groups.flatMap((g) => g.list.map((t) => ({ ...t })));
+    lastAdjMerge = before;
+    store.batch(() => {
+      for (const g of groups) {
+        const [keep, ...rest] = g.list;
+        if (Math.abs(g.net) < 0.005) { g.list.forEach((t) => store.remove('transactions', t.id)); continue; }
+        store.upsert('transactions', { ...keep, amount: g.net, notes: `Merged ${g.list.length} adjustments (${g.list.map((t) => fmt(Number(t.amount) || 0, g.currency, { sign: true })).join(', ')})` });
+        rest.forEach((t) => store.remove('transactions', t.id));
+      }
+    });
+    Modal.close();
+    const undo = () => { store.batch(() => before.forEach((t) => store.upsert('transactions', t))); lastAdjMerge = null; toast('Merge undone.'); };
+    toast(`Merged ${before.length} adjustments. Balances unchanged.`, '', { label: 'Undo', fn: undo, ms: 20000 });
+  };
 }
 
 /* ---------------- settings actions ---------------- */
