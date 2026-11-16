@@ -272,6 +272,45 @@ function darken(hex, amt = 0.45) {
   return `rgb(${f((n >> 16) & 255)},${f((n >> 8) & 255)},${f(n & 255)})`;
 }
 /** Striped fill for the over-allowance part of a bar: darker shade with stripes of the person's colour, readable in light and dark mode. */
+/* Phone version of the trend chart: one row per day/week/month, newest first, with a bar against the allowance. */
+/** Full amount on wide screens, compact (Rp 1,5 jt) on phones. */
+const dualMoney = (v) => `<span class="m-full">${money(v)}</span><span class="m-cmp">${money(v, { compact: true })}</span>`;
+function trendListHTML(TV, tLines, A) {
+  const today = todayStr();
+  const short = (v) => shortIDR(Math.abs(v));
+  const label = (b) => TV.unit === 'day' ? new Date(b.from + 'T00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+    : TV.unit === 'week' ? b.range : fmtMonth(b.key, true);
+  let rows = [];
+  if (ui.dashTrend === 'flow') {
+    const bk = buckets(TV.r, TV.unit); const idx = new Map(bk.list.map((b, i) => [b.key, i]));
+    const inc = bk.list.map(() => 0), out = bk.list.map(() => 0);
+    for (const l of tLines) { const i = idx.get(bk.keyOf(l.date)); if (i === undefined) continue; if (l.type === 'income') inc[i] += l.v; else if (l.type === 'expense') out[i] += l.v; }
+    const max = Math.max(1, ...inc, ...out);
+    rows = bk.list.map((b, i) => ({ b, html: `<div class="tl-bars">
+        <div class="tl-bar"><span style="width:${(inc[i] / max) * 100}%;background:${ccol('income')}"></span></div>
+        <div class="tl-bar"><span style="width:${(out[i] / max) * 100}%;background:${ccol('spend')}"></span></div></div>
+      <div class="tl-amt"><b class="good">+${short(inc[i])}</b><small>−${short(out[i])}</small></div>` })).filter((r) => r.b.from <= today);
+  } else {
+    const max = Math.max(1, ...A.people.flatMap((p) => A.spent[p].map((v, i) => Math.max(v, A.allow[p][i]))));
+    rows = A.bk.list.map((b, i) => {
+      const bars = A.people.map((p) => {
+        const sp = A.spent[p][i], al = A.allow[p][i], col = pcolor(p);
+        const inW = ((al ? Math.min(sp, al) : sp) / max) * 100, ovW = (al && sp > al ? (sp - al) / max : 0) * 100;
+        return `<div class="tl-bar" title="${esc(pname(p))}: ${money(sp)}${al ? ` of ${money(al)}` : ''}"><span style="width:${inW}%;background:${col}"></span>${ovW ? `<span class="tl-over" style="width:${ovW}%;--c:${col}"></span>` : ''}${al ? `<i class="tl-mark" style="left:${(al / max) * 100}%"></i>` : ''}</div>`;
+      }).join('');
+      const amt = A.people.map((p) => { const sp = A.spent[p][i], al = A.allow[p][i]; return `<div class="${al && sp > al + 0.5 ? 'bad' : ''}">${short(sp)}${al ? `<small> / ${short(al)}</small>` : ''}</div>`; }).join('');
+      return { b, html: `<div class="tl-bars">${bars}</div><div class="tl-amt">${amt}</div>` };
+    }).filter((r) => r.b.from <= today);
+  }
+  rows.reverse();
+  const limit = TV.unit === 'day' ? 7 : 6;
+  const shown = ui.trendAll ? rows : rows.slice(0, limit);
+  const legend = ui.dashTrend === 'flow'
+    ? `<div class="tl-legend"><span><i style="background:${ccol('income')}"></i>Income</span><span><i style="background:${ccol('spend')}"></i>Spending</span></div>`
+    : `<div class="tl-legend">${A.people.length > 1 ? A.people.map((p) => `<span><i style="background:${pcolor(p)}"></i>${esc(pname(p))}</span>`).join('') : ''}<span><i class="tl-lg-over"></i>over allowance</span><span><i class="tl-lg-mark"></i>allowance</span></div>`;
+  return `${legend}<div class="tl-list">${shown.map((r) => `<div class="tl-row"><div class="tl-label">${esc(label(r.b))}</div>${r.html}</div>`).join('') || '<div class="muted small">Nothing yet in this period.</div>'}</div>
+    ${rows.length > limit ? `<button class="btn ghost sm tl-more" data-action="trend-all">${ui.trendAll ? 'Show less' : `Show all ${rows.length} ${TV.unit}s`}</button>` : ''}`;
+}
 function trendScrollToNow(bk) {
   const sc = document.getElementById('trend-scroll'); if (!sc || sc.scrollWidth <= sc.clientWidth + 2) return;
   const t = todayStr(); let i = bk.list.findIndex((b) => t >= b.from && t <= b.to);
@@ -467,11 +506,11 @@ Views.dashboard = () => {
       <div class="trend-tools"><div class="seg sm" role="group" aria-label="Group bars by">${[['day', 'Days'], ['week', 'Weeks'], ['month', 'Months']].map(([k, l]) => `<button class="${TV.unit === k ? 'on' : ''}" data-action="dash-gran" data-v="${k}" aria-pressed="${TV.unit === k}">${l}</button>`).join('')}</div>
         ${TV.widened ? `<span class="small muted">Showing ${TV.widened}</span>` : ''}</div>
       ${summaryHTML}
-      ${ui.dashTrend === 'flow' ? '' : `<div class="lg-row">${A.people.map((p) => `<span><span class="sw" style="background:${pcolor(p)}"></span>${esc(pname(p))}</span>`).join('')}
+      ${ui.dashTrend === 'flow' || isPhone() ? '' : `<div class="lg-row">${A.people.map((p) => `<span><span class="sw" style="background:${pcolor(p)}"></span>${esc(pname(p))}</span>`).join('')}
         <span><span class="sw" style="background:repeating-linear-gradient(135deg, ${darken(pcolor(A.people[0]), 0.5)} 0 3px, ${pcolor(A.people[0])} 3px 5px)"></span>Darker striped part = over allowance</span>
         <span><span class="sw sw-line"></span>Allowance</span></div>`}
-      <div class="chart-scroll" id="trend-scroll"><div class="chart-box tall" style="--chart-min:${chartMin}px"><canvas id="ch-trend"></canvas></div></div>
-      ${ui.dashTrend === 'flow' ? '' : `<div class="hint" style="margin-top:6px">${TV.unit === 'day' ? '' : `Each bar is one ${TV.unit}; the allowance mark is the daily allowance × the days in that ${TV.unit}. `}Day-to-day (flexible) spending only. Fixed bills like rent, installments and savings are checked monthly in Budget vs actual. Change which categories are fixed on the <a href="#categories">Categories</a> page.</div>`}
+      ${isPhone() ? trendListHTML(TV, tLines, A) : `<div class="chart-scroll" id="trend-scroll"><div class="chart-box tall" style="--chart-min:${chartMin}px"><canvas id="ch-trend"></canvas></div></div>`}
+      ${ui.dashTrend === 'flow' || isPhone() ? '' : `<div class="hint" style="margin-top:6px">${TV.unit === 'day' ? '' : `Each bar is one ${TV.unit}; the allowance mark is the daily allowance × the days in that ${TV.unit}. `}Day-to-day (flexible) spending only. Fixed bills like rent, installments and savings are checked monthly in Budget vs actual. Change which categories are fixed on the <a href="#categories">Categories</a> page.</div>`}
     </div>
     <div class="card">
       <div class="card-head"><h3>By category</h3><span class="sub">tap to filter</span></div>
@@ -531,7 +570,8 @@ Views.dashboard.after = () => {
   const c = themeColors();
   const TV = trendView(f);
   const tLines = TV.widened ? filteredLines(TV.r) : lines;
-  if (ui.dashTrend === 'flow') {
+  if (isPhone()) { /* phone shows the list version (trendListHTML) */ }
+  else if (ui.dashTrend === 'flow') {
     const bk = buckets(TV.r, TV.unit);
     const idx = new Map(bk.list.map((b, i) => [b.key, i]));
     const inc = new Array(bk.list.length).fill(0), out = new Array(bk.list.length).fill(0);
@@ -735,13 +775,13 @@ Views.budget = () => {
     const st = isInc ? 'ok' : budgetStatus(p, cm, fr);
     const ratio = p ? a / p : (a ? 1.01 : 0);
     return `<tr class="${st === 'amber' ? 'row-amber' : ''}">
-      <td class="nowrap"><span class="dot" style="background:${c.color}"></span> ${esc(c.name)}${isFixed(c) ? ' <span class="badge">fixed</span>' : ''}</td>
-      ${cols.map((pid) => { const v = budgetCell(ym, c.id, pid); return `<td class="r ${onePerson && f.person !== pid ? 'hide-sm' : ''}" ${onePerson && f.person !== pid ? 'style="opacity:.45"' : ''}><input class="cell ${inherited ? 'inherited' : ''}" inputmode="decimal" data-bud="${c.id}|${pid}" value="${v ? fmtInput(v) : ''}" placeholder="0" aria-label="${esc(c.name)} budget for ${esc(pname(pid))}"></td>`; }).join('')}
-      <td class="r num"><b>${money(p)}</b></td>
-      <td class="r num ${cm ? '' : 'muted'}">${isInc ? '' : cm ? money(cm) : '–'}</td>
-      <td class="r num">${money(fr)}</td>
-      <td class="r num ${st === 'amber' ? 'warn' : st === 'red' ? 'bad' : ''} ${isInc && left < 0 && isPast ? 'warn' : ''}">${isInc ? money(left, { sign: true }) : money(left)}${st === 'amber' ? `<div><button class="btn sm raise-btn" data-action="raise-plan" data-id="${c.id}" title="Set the plan to at least what's already committed">Raise plan to cover</button></div>` : ''}</td>
-      <td style="min-width:110px">${isInc ? progressBar(Math.min(ratio, 1)).replace(/class="(ok|near|over)"/, 'class="ok"') : commitBar(p, cm, fr)}</td>
+      <td class="nowrap b-name"><span class="dot" style="background:${c.color}"></span> ${esc(c.name)}${isFixed(c) ? ' <span class="badge">fixed</span>' : ''}</td>
+      ${cols.map((pid) => { const v = budgetCell(ym, c.id, pid); return `<td class="r b-in ${onePerson && f.person !== pid ? 'hide-sm' : ''}" data-label="${esc(pname(pid))}" ${onePerson && f.person !== pid ? 'style="opacity:.45"' : ''}><input class="cell ${inherited ? 'inherited' : ''}" inputmode="decimal" data-bud="${c.id}|${pid}" value="${v ? fmtInput(v) : ''}" placeholder="0" aria-label="${esc(c.name)} budget for ${esc(pname(pid))}"></td>`; }).join('')}
+      <td class="r num b-plan" data-label="Plan"><b>${dualMoney(p)}</b></td>
+      <td class="r num b-cmt ${cm ? '' : 'muted b-empty'}" data-label="Committed">${isInc ? '' : cm ? dualMoney(cm) : '–'}</td>
+      <td class="r num b-free" data-label="${isInc ? 'Received' : 'Spent'}">${dualMoney(fr)}</td>
+      <td class="r num b-left ${st === 'amber' ? 'warn' : st === 'red' ? 'bad' : ''} ${isInc && left < 0 && isPast ? 'warn' : ''}">${isInc ? money(left, { sign: true }) : money(left)}${st === 'amber' ? `<div><button class="btn sm raise-btn" data-action="raise-plan" data-id="${c.id}" title="Set the plan to at least what's already committed">Raise plan to cover</button></div>` : ''}</td>
+      <td class="b-bar" style="min-width:110px">${isInc ? progressBar(Math.min(ratio, 1)).replace(/class="(ok|near|over)"/, 'class="ok"') : commitBar(p, cm, fr)}</td>
     </tr>`;
   };
   return `
@@ -766,13 +806,13 @@ Views.budget = () => {
   <div class="card section-gap">
     <div class="card-head"><h3>${fmtMonth(ym, true)} plan</h3><span class="sub">${onePerson ? `Showing ${esc(pname(f.person))}'s plan & actuals` : f.person === SPLIT ? 'Totals plan · actuals of split items only' : 'Totals for both of you'}${f.cats ? ' · filtered categories' : ''}</span></div>
     ${(() => { const per = PEOPLE.map((p) => [p, dailyAllowance(`${ym}-01`, p, f.cats)]); const tot = per.reduce((a, [, v]) => a + v, 0); return tot ? `<div class="banner info" style="margin-bottom:12px">${icon('calendar')}<div class="grow small"><b>Daily allowance for day-to-day spending:</b> ${per.map(([p, v]) => `${esc(pname(p))} ${money(v)}`).join(' · ')} per day. This is the flexible budget (categories not marked <span class="badge">fixed</span>) ÷ ${daysInMonth(ym)} days, and it's what the dashboard bars compare against.</div></div>` : ''; })()}
-    <div class="table-wrap"><table class="t">
+    <div class="table-wrap"><table class="t bud-table">
       <thead><tr><th>Category</th>${cols.map((p) => `<th class="r ${onePerson && f.person !== p ? 'hide-sm' : ''}"><span class="dot" style="background:${pcolor(p)}"></span> ${esc(pname(p))}</th>`).join('')}<th class="r">Plan</th><th class="r" title="Installments and monthly repeats due this month (recorded or still expected)">Committed</th><th class="r" title="Everything else you spent">Spent freely</th><th class="r">Left</th><th></th></tr></thead>
       <tbody>
       ${sections.filter(([, list]) => list.length).map(([g, list]) => {
     const pSum = sum(list, planned), aSum = sum(list, (c) => actual[c.id] || 0);
     const cSum = g === 'Income' ? 0 : sum(list, (c) => cmtOf(c.id)), fSum = g === 'Income' ? aSum : sum(list, (c) => freeOf(c.id));
-    return `<tr class="group"><td colspan="${cols.length + 1}">${g}</td><td class="r">${money(pSum)}</td><td class="r">${g === 'Income' ? '' : money(cSum)}</td><td class="r">${money(fSum)}</td><td class="r">${g === 'Income' ? money(aSum - pSum, { sign: true }) : money(pSum - cSum - fSum)}</td><td></td></tr>${list.map(rowHTML).join('')}`;
+    return `<tr class="group"><td class="g-name" colspan="${cols.length + 1}">${g}</td><td class="r g-plan" data-label="Plan">${money(pSum)}</td><td class="r g-cmt">${g === 'Income' ? '' : money(cSum)}</td><td class="r g-free">${money(fSum)}</td><td class="r g-left" data-label="Left">${g === 'Income' ? money(aSum - pSum, { sign: true }) : money(pSum - cSum - fSum)}</td><td class="g-pad"></td></tr>${list.map(rowHTML).join('')}`;
   }).join('')}
       </tbody></table></div>
   </div>
@@ -972,7 +1012,7 @@ Views.balance = () => {
   <div class="grid cols-2-1 section-gap">
     <div class="card">
       <div class="card-head"><h3>Accounts</h3></div>
-      ${accs.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Account</th><th class="hide-sm">Owner</th><th class="r">Balance</th><th class="r hide-sm">Change in period</th><th></th></tr></thead><tbody>
+      ${accs.length ? `<div class="table-wrap"><table class="t acc-table"><thead><tr><th>Account</th><th class="hide-sm">Owner</th><th class="r">Balance</th><th class="r hide-sm">Change in period</th><th></th></tr></thead><tbody>
       ${accs.map((a) => { const bal = accountBalance(a, asOf); const ch = bal - accountBalance(a, startRef); return `<tr data-sort-id="${a.id}">
         <td class="name-cell">${dragHandle(a.name)}<b>${esc(a.name)}</b>${looksLikeDebt(a) ? ` <button class="badge warn" data-action="set-debt-type" data-id="${a.id}" style="border:0;cursor:pointer" title="Turn on installments, statements and bill reminders">Is this a ${suggestedDebtType(a) === 'paylater' ? 'paylater' : 'credit card'}?</button>` : ''}<div class="small muted">${ACCOUNT_TYPES[a.type] || a.type} · ${a.currency}${a.openingDate ? ` · since ${fmtDate(a.openingDate)}` : ''}</div></td>
         <td class="hide-sm">${personChip(a.owner)}</td>

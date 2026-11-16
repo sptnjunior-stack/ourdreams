@@ -3,7 +3,7 @@
  * core.js — utilities, icons, data model, store and calculations
  * ===================================================================== */
 
-const APP_VERSION = '1.14.0';
+const APP_VERSION = '1.15.0';
 const LS = { data: 'cbt.data.v1', cfg: 'cbt.config.v1', ui: 'cbt.ui.v1', sync: 'cbt.sync.v1' };
 
 /* ---------------- utils ---------------- */
@@ -201,6 +201,9 @@ const SCHEMES = [
   { id: 'volt', name: 'Volt', desc: 'Electric blue & neon lime', colors: ['#0036ff', '#b5f800', '#001466', '#eef5d6'], grad: 'linear-gradient(180deg,#0036ff 0 50%,#b5f800 50%)' },
   { id: 'apple', name: 'Apple', desc: 'Plain iOS system colours', colors: ['#007aff', '#ff9500', '#34c759', '#f2f2f7'], grad: 'linear-gradient(135deg,#f2f2f7 0 45%,#007aff 45% 63%,#ff9500 63% 81%,#34c759 81%)' },
 ];
+/** Phone layout (iPhone 14 = 390px, 16 Pro = 402px). Pages switch to list layouts below this width. */
+const PHONE_MAX = 640;
+const isPhone = () => { try { return window.matchMedia(`(max-width: ${PHONE_MAX}px)`).matches; } catch (e) { return false; } };
 function cssVar(name, fallback) {
   try { const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return v || fallback; } catch (e) { return fallback; }
 }

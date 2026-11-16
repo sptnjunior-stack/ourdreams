@@ -82,6 +82,8 @@ const App = {
     });
     try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { applyTheme(); this.render(); }); } catch (e) { /* ignore */ }
     $('#fab').innerHTML = icon('plus');
+    { let wasPhone = isPhone(), t = null;
+      window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { const now = isPhone(); if (now !== wasPhone) { wasPhone = now; this.render(); } }, 150); }, { passive: true }); }
     this.onHash(true);
     if (!cfg.me) welcome();
     // "Open the add form when the app starts" (per device, Home Screen app only)
@@ -168,9 +170,10 @@ const App = {
       // built once, so the glass lens can glide between tabs
       tb.innerHTML = '<span class="tab-lens" aria-hidden="true"></span>'
         + tabs.map(([id, label, ic]) => `<a class="tab" data-tab="${id}" href="#${id}">${icon(ic)}<span>${label}</span></a>`).join('')
-        + `<button type="button" class="tab" data-tab="more" data-action="open-nav" aria-label="More pages">${icon('menu')}<span>More</span></button>`;
+        + `<button type="button" class="tab" data-tab="more" data-action="open-more" aria-label="More pages">${icon('menu')}<span>More</span></button>`;
       tb.dataset.built = '1';
       window.addEventListener('resize', () => this.placeLens(), { passive: true });
+      tb.addEventListener('transitionend', () => this.placeLens());
       // minimize while scrolling down, expand when scrolling up
       let lastY = window.scrollY, ticking = false;
       window.addEventListener('scroll', () => {
@@ -195,8 +198,11 @@ const App = {
     const tb = $('#tabbar'); if (!tb) return;
     const lens = tb.querySelector('.tab-lens'); const act = tb.querySelector('.tab.active');
     if (!lens || !act || !act.offsetWidth) return;
-    lens.style.width = `${act.offsetWidth}px`;
-    lens.style.transform = `translateX(${act.offsetLeft}px)`;
+    // measured from the bar's own box, so it stays centred under the tab at any width
+    const tbr = tb.getBoundingClientRect(), r = act.getBoundingClientRect(), sx = tbr.width / (tb.offsetWidth || tbr.width || 1);
+    const inset = 4;
+    lens.style.width = `${Math.max(0, r.width / sx - inset * 2)}px`;
+    lens.style.transform = `translateX(${(r.left - tbr.left) / sx + inset - tb.clientLeft}px)`;
   },
   renderSidebar() {
     $('#sidebar').innerHTML = `
@@ -295,7 +301,10 @@ const App = {
     const v = el.dataset.v;
     if (el.tagName === 'A' || el.tagName === 'H6') e.preventDefault();
     switch (act) {
-      case 'open-nav': $('#app').classList.add('nav-open'); break;
+      case 'open-nav': if (isPhone() || window.innerWidth <= 860) openMoreSheet(); else $('#app').classList.add('nav-open'); break;
+      case 'open-more': openMoreSheet(); break;
+      case 'more-go': Modal.close(); this.go(el.dataset.page); break;
+      case 'trend-all': ui.trendAll = !ui.trendAll; this.render(); break;
       case 'close-nav': $('#app').classList.remove('nav-open'); break;
       case 'toggle-filters': this.filtersOpen = !this.filtersOpen; this.renderTopbar(); break;
       case 'add-tx': openTxForm(); break;
@@ -1093,6 +1102,19 @@ function openAddFromLink(q) {
   const date = q.get('date'); if (date && isValidDate(date)) preset.date = date;
   openTxForm(null, preset);
   if (!gh.configured()) toast('This browser isn\'t connected to GitHub — this entry will stay on this device only.', 'bad');
+}
+/* Phone: "More" opens a sheet with the remaining pages and device settings (no side drawer). */
+function openMoreSheet() {
+  const extra = PAGES.filter(([id]) => !['dashboard', 'log', 'budget', 'balance'].includes(id));
+  Modal.open(`${Modal.head('More', '')}
+    <div class="modal-body more-sheet">
+      <div class="more-list">${extra.map(([id, label, ic]) => `<button class="more-item ${ui.page === id ? 'active' : ''}" data-action="more-go" data-page="${id}">${icon(ic)}<span>${label}</span>${icon('right')}</button>`).join('')}</div>
+      <div class="more-section">
+        <div class="small muted">Using this device</div>
+        <div class="seg full">${['junior', 'sabit'].map((p) => `<button class="${me() === p ? 'on' : ''}" data-action="set-me" data-v="${p}"><span class="dot" style="background:${pcolor(p)}"></span>${esc(pname(p))}</button>`).join('')}</div>
+      </div>
+      <div class="more-foot">${sync.pillHTML()}<span class="small muted">Version ${APP_VERSION}</span></div>
+    </div>`);
 }
 /** A copy of a transaction for "Duplicate": new id, dated today, without flags, repeats or sync metadata. */
 function dupPreset(rec) {
